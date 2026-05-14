@@ -74,11 +74,17 @@ export function getAdminHTML() {
     .empty-state{padding:48px 20px;text-align:center;color:var(--muted)}
     .pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
     .pagination-controls{display:flex;gap:8px}
-    .settings-card{border:1px solid var(--border);border-radius:16px;background:#181818;padding:16px;margin-bottom:18px}
-    .settings-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap}
-    .settings-title{font-size:16px;font-weight:700}
+    .settings-card{border:1px solid rgba(79,140,255,.22);border-radius:18px;background:linear-gradient(135deg,rgba(79,140,255,.10),rgba(24,24,24,.98) 42%,rgba(34,197,94,.05));padding:18px;margin-bottom:18px;box-shadow:0 14px 34px rgba(0,0,0,.18)}
+    .settings-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+    .settings-title{font-size:17px;font-weight:800;display:flex;align-items:center;gap:8px}
     .settings-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .settings-body{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:14px;align-items:stretch}
+    .settings-body textarea{min-height:126px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;line-height:1.6;background:rgba(10,10,10,.36)}
+    .hint-card{border:1px solid var(--border);border-radius:14px;background:rgba(0,0,0,.18);padding:13px;color:var(--muted);font-size:12px}
+    .hint-card b{color:var(--text)}
+    .hint-card code{color:#bfdbfe}
     .settings-hint{color:var(--muted);font-size:12px;margin-top:8px}
+    .msg-ok{color:#86efac}
     .footer{padding:16px 24px 24px;text-align:center;color:var(--muted);font-size:12px}
     .modal{position:fixed;inset:0;background:rgba(0,0,0,.52);display:grid;place-items:center;padding:24px;z-index:30}
     .modal-card{width:min(100%,460px);background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:24px}
@@ -86,8 +92,8 @@ export function getAdminHTML() {
     .modal-title{font-size:18px;font-weight:700}
     .muted{color:var(--muted)}
     .text-right{text-align:right}
-    @media(max-width:900px){.layout{grid-template-columns:1fr;padding:16px}.sidebar-list{flex-direction:row;overflow:auto;max-height:none}.sidebar-item{min-width:200px}}
-    @media(max-width:640px){.topbar{margin:12px 12px 0;padding:14px;border-radius:16px}.layout{padding:12px;gap:12px}.table-wrap{overflow-x:auto}table{min-width:780px}}
+    @media(max-width:900px){.layout{grid-template-columns:1fr;padding:16px}.sidebar-list{flex-direction:row;overflow:auto;max-height:none}.sidebar-item{min-width:200px}.settings-body{grid-template-columns:1fr}}
+    @media(max-width:640px){.topbar{margin:12px 12px 0;padding:14px;border-radius:16px}.topbar-right{width:100%;justify-content:flex-end;flex-wrap:wrap}.layout{padding:12px;gap:12px}.main-panel{padding:16px}.toolbar-right{width:100%}.search-wrap{min-width:100%;}.settings-actions{width:100%}.settings-actions button{flex:1}.table-wrap{overflow-x:auto}table{min-width:780px}}
   </style>
 </head>
 <body>
@@ -179,17 +185,29 @@ export function getAdminHTML() {
       <div class="settings-card">
         <div class="settings-head">
           <div>
-            <div class="settings-title">优选 IP / 优选代理</div>
-            <div class="muted">可选。每行一个 IP、IP:端口或代理域名；留空则不启用。</div>
+            <div class="settings-title">🚀 优选 IP / 优选代理</div>
+            <div class="muted">用于 Cloudflare 优选线路或中转代理，可选配置，留空即关闭。</div>
           </div>
           <div class="settings-actions">
             <span id="preferredIpStatus" class="tag">未启用</span>
-            <button class="primary" id="preferredIpSaveBtn" onclick="savePreferredIPs()">保存优选 IP</button>
+            <button class="primary" id="preferredIpSaveBtn" onclick="savePreferredIPs()">保存配置</button>
           </div>
         </div>
-        <textarea id="preferredIpInput" rows="3" placeholder="104.16.0.1&#10;104.17.0.1&#10;proxy.example.com:443"></textarea>
-        <div class="settings-hint">说明：Worker 会把上游请求改写到这里填写的优选 IP/代理，但 Host 仍保持你的 Emby 上游域名。多个地址会随机选一个。</div>
-        <div class="error-msg" id="preferredIpErr"></div>
+        <div class="settings-body">
+          <div>
+            <textarea id="preferredIpInput" rows="4" spellcheck="false" placeholder="104.16.0.1&#10;104.17.0.1&#10;proxy.example.com:443"></textarea>
+            <div class="settings-hint">每行一个。支持 IP、IP:端口、代理域名:端口；不要填写 http:// 或路径。</div>
+            <div class="error-msg" id="preferredIpErr"></div>
+          </div>
+          <div class="hint-card">
+            <b>工作方式</b><br>
+            请求会连接这里填写的地址，但 <code>Host</code> 仍保持 Emby 上游域名。<br><br>
+            <b>示例</b><br>
+            <code>104.16.0.1</code><br>
+            <code>104.17.0.1</code><br>
+            <code>proxy.example.com:443</code>
+          </div>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
@@ -376,9 +394,10 @@ async function savePreferredIPs() {
   const err = document.getElementById('preferredIpErr');
   const preferredIPs = parsePreferredIPs();
   const invalid = preferredIPs.find(v => !isValidPreferredIP(v));
-  if (invalid) { err.textContent = '格式错误：' + invalid + '。请填写 IP、IP:端口或代理域名，不要带 http:// 或路径。'; return; }
+  if (invalid) { err.className = 'error-msg'; err.textContent = '格式错误：' + invalid + '。请填写 IP、IP:端口或代理域名，不要带 http:// 或路径。'; return; }
   btn.disabled = true;
   btn.textContent = '保存中…';
+  err.className = 'error-msg';
   err.textContent = '';
   const res = await authFetch('/_admin/preferred-ips', {
     method: 'POST',
@@ -386,12 +405,13 @@ async function savePreferredIPs() {
     body: JSON.stringify({ preferredIPs })
   });
   btn.disabled = false;
-  btn.textContent = '保存优选 IP';
-  if (!res) { err.textContent = '请求失败'; return; }
+  btn.textContent = '保存配置';
+  if (!res) { err.className = 'error-msg'; err.textContent = '请求失败'; return; }
   const data = await res.json();
-  if (!res.ok) { err.textContent = data.error || '保存失败'; return; }
+  if (!res.ok) { err.className = 'error-msg'; err.textContent = data.error || '保存失败'; return; }
   allPreferredIPs = data.preferredIPs || [];
   renderPreferredIPs();
+  err.className = 'error-msg msg-ok';
   err.textContent = allPreferredIPs.length > 0 ? '已保存，后续请求会自动使用优选 IP。' : '已清空，优选 IP 已关闭。';
 }
 
