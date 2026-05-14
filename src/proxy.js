@@ -15,7 +15,7 @@ const HOP_BY_HOP_HEADERS = [
 
 const RESPONSE_BLOCKED_HEADERS = ['cf-cache-status', 'cf-ray', 'server'];
 const MAX_RETRIES = 3;
-const REQUEST_TIMEOUT_MS = 10000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
 
 function isWebSocketRequest(request) {
   return request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
@@ -80,32 +80,65 @@ function shouldRetry(response, error) {
   return response.status >= 500;
 }
 
+function getRequestTimeoutMs(env) {
+  const value = Number(env.REQUEST_TIMEOUT_MS);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_REQUEST_TIMEOUT_MS;
+}
+
 function getPreferredIp(env) {
   if (String(env.USE_CF_IPS || '').toLowerCase() !== 'true') {
     return null;
   }
 
   const ips = getBestIPs(env.PREFERRED_REGION || 'apac');
-  return ips[0] || null;
+  if (!Array.isArray(ips) || ips.length === 0) {
+    return null;
+  }
+
+  const fixedIndex = Number(env.CF_IP_INDEX);
+  if (Number.isInteger(fixedIndex) && fixedIndex >= 0) {
+    return ips[fixedIndex % ips.length] || null;
+  }
+
+  return ips[Math.floor(Math.random() * ips.length)] || null;
 }
 
 async function proxyToUpstream(request, upstream, env) {
   const originalUpstreamUrl = createTargetUrl(request, upstream);
   const preferredIp = getPreferredIp(env);
-  const override = getResolveOverride(originalUpstreamUrl.toString(), preferredIp);
-  const targetUrl = override.url;
-  const headers = buildForwardedHeaders(request, upstream, override.originalHost);
-  const init = {
+  const timeoutMs = getRequestTimeoutMs(env);
+
+  const directInit = {
     method: request.method,
-    headers,
+    headers: buildForwardedHeaders(request, upstream),
     redirect: 'manual'
   };
 
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    init.body = await request.clone().arrayBuffer();
+    directInit.body = request.body;
   }
 
-  return withTimeout(fetch(targetUrl, init), REQUEST_TIMEOUT_MS);
+  if (!preferredIp) {
+    return withTimeout(fetch(originalUpstreamUrl.toString(), directInit), timeoutMs);
+  }
+
+  const override = getResolveOverride(originalUpstreamUrl.toString(), preferredIp);
+  const preferredInit = {
+    method: request.method,
+    headers: buildForwardedHeaders(request, upstream, override.originalHost),
+    redirect: 'manual'
+  };
+
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    preferredInit.body = request.body;
+  }
+
+  try {
+    return await withTimeout(fetch(override.url, preferredInit), timeoutMs);
+  } catch (error) {
+    console.warn(`Preferred IP ${preferredIp} failed, fallback to direct upstream ${upstream}`);
+    return withTimeout(fetch(originalUpstreamUrl.toString(), directInit), timeoutMs);
+  }
 }
 
 export async function handleProxyRequest(request, env) {
@@ -117,12 +150,22 @@ export async function handleProxyRequest(request, env) {
     try {
       const response = await proxyToUpstream(request, upstream, env);
 
-      if (shouldRetry(response)) {
+      if (shouldRetry(response, null)) {
         errors.push({ upstream, status: response.status });
         continue;
       }
 
       const headers = copyHeaders(response.headers, RESPONSE_BLOCKED_HEADERS);
+
+      if (isWebSocketRequest(request)) {
+        if (response.status === 101 && response.webSocket) {
+          return response;
+        }
+
+        errors.push({ upstream, status: response.status, error: 'WebSocket upgrade failed' });
+        continue;
+      }
+
       return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,
@@ -131,6 +174,10 @@ export async function handleProxyRequest(request, env) {
     } catch (error) {
       console.error(`Proxy attempt failed for ${upstream}:`, error);
       errors.push({ upstream, error: error.message });
+
+      if (!shouldRetry({ status: 0 }, error)) {
+        break;
+      }
     }
   }
 

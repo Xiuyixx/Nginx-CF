@@ -1,19 +1,31 @@
+# Nginx-CF - Cloudflare Worker 多上游反向代理
+# 文档：https://github.com/Xiuyixx/Nginx-CF
+
 name = "nginx-cf"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
 
+# ── Workers KV ──
+# 用于持久化存储上游列表、健康状态和管理员密码
+# 部署后在 Cloudflare Dashboard → Workers KV 创建命名空间，将 id 填入下方
+# 如不配置 KV，Worker 会以内存模式运行（重启后数据丢失），但仍可正常使用
 [[kv_namespaces]]
 binding = "KV"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "YOUR_KV_NAMESPACE_ID"   # ← 替换为你的 KV namespace ID
 
+# ── 环境变量 ──
+# ⚠️ 安全提示：UPSTREAMS 和 ADMIN_TOKEN 请通过 Cloudflare 控制台的
+#    「Workers → Settings → Variables and Secrets」填写，不要写在这里
+#    如果你使用了首次安装向导（/_admin），这两项可以直接在网页上配置，无需改此文件
 [vars]
-# ⚠️  UPSTREAMS 和 ADMIN_TOKEN 请勿直接写在这里（公开仓库会泄露）
-# 请在 Cloudflare Dashboard → Worker → Settings → Variables 中单独添加这两项
-# 参考值格式（仅供参考，请在控制台填写真实值）：
-#   UPSTREAMS      = "https://a.example.com,https://b.example.com"
-#   ADMIN_TOKEN    = "your-random-secret-token"
-USE_CF_IPS = "false"
-PREFERRED_REGION = "apac"
+USE_CF_IPS = "false"           # 是否启用 Cloudflare 优选 IP（true/false）
+PREFERRED_REGION = "apac"      # 优选 IP 地区：apac（亚太）/ europe / us
+# HEALTH_CHECK_PATH = "/"      # 健康检查探测路径（默认 /）
+# REQUEST_TIMEOUT_MS = "10000" # 代理请求超时（毫秒，默认 10000）
+# HEALTH_TIMEOUT_MS = "5000"   # 健康检查超时（毫秒，默认 5000）
+# CF_IP_INDEX = ""             # 固定使用第几个优选 IP（留空则随机选取）
 
+# ── Cron 触发器 ──
+# 每 5 分钟自动执行一次健康检查
 [[triggers.crons]]
 cron = "*/5 * * * *"

@@ -1,6 +1,6 @@
 import { getUpstreams, getHealth, setHealth } from './config.js';
 
-const HEALTH_TIMEOUT_MS = 5000;
+const DEFAULT_HEALTH_TIMEOUT_MS = 5000;
 
 function withTimeout(promise, timeoutMs) {
   return Promise.race([
@@ -15,10 +15,41 @@ function toHealthMap(records) {
   return new Map((Array.isArray(records) ? records : []).map((item) => [item.url, item]));
 }
 
+function getHealthCheckPath(env) {
+  const configured = String(env.HEALTH_CHECK_PATH || '/').trim();
+  if (!configured.startsWith('/')) {
+    return `/${configured}`;
+  }
+  return configured || '/';
+}
+
+function getHealthTimeoutMs(env) {
+  const value = Number(env.HEALTH_TIMEOUT_MS);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_HEALTH_TIMEOUT_MS;
+}
+
+function buildHealthUrl(upstreamUrl, env) {
+  const url = new URL(upstreamUrl);
+  url.pathname = getHealthCheckPath(env);
+  url.search = '';
+  return url.toString();
+}
+
+async function fetchHealth(url, timeoutMs) {
+  const first = await withTimeout(fetch(new Request(url, { method: 'HEAD' })), timeoutMs);
+
+  if (first.status === 405) {
+    return withTimeout(fetch(new Request(url, { method: 'GET' })), timeoutMs);
+  }
+
+  return first;
+}
+
 export async function runHealthChecks(env) {
   const upstreams = await getUpstreams(env);
   const oldHealth = await getHealth(env);
   const oldHealthMap = toHealthMap(oldHealth);
+  const timeoutMs = getHealthTimeoutMs(env);
 
   if (upstreams.length === 0) {
     console.warn('Health check skipped: no upstreams configured');
@@ -31,11 +62,8 @@ export async function runHealthChecks(env) {
       const startedAt = Date.now();
 
       try {
-        const response = await withTimeout(
-          fetch(new Request(upstreamUrl, { method: 'HEAD' })),
-          HEALTH_TIMEOUT_MS
-        );
-
+        const healthUrl = buildHealthUrl(upstreamUrl, env);
+        const response = await fetchHealth(healthUrl, timeoutMs);
         const latency = Date.now() - startedAt;
         const healthy = response.ok || (response.status >= 300 && response.status < 500);
 
@@ -52,7 +80,7 @@ export async function runHealthChecks(env) {
         return {
           url: upstreamUrl,
           healthy: false,
-          latency: Number.POSITIVE_INFINITY,
+          latency: -1,
           lastCheck: new Date().toISOString(),
           error: error.message,
           status: oldHealthMap.get(upstreamUrl)?.status || 0
@@ -74,6 +102,11 @@ export async function chooseUpstreams(env) {
     throw new Error('No upstreams configured');
   }
 
+  const knownHealthCount = upstreams.filter((url) => healthMap.has(url)).length;
+  if (knownHealthCount === 0) {
+    return upstreams;
+  }
+
   const ranked = upstreams
     .map((url, index) => {
       const item = healthMap.get(url);
@@ -81,8 +114,7 @@ export async function chooseUpstreams(env) {
         url,
         index,
         healthy: item?.healthy ?? false,
-        latency: Number.isFinite(item?.latency) ? item.latency : Number.POSITIVE_INFINITY,
-        lastCheck: item?.lastCheck || null
+        latency: Number.isFinite(item?.latency) && item.latency >= 0 ? item.latency : Number.POSITIVE_INFINITY
       };
     })
     .sort((a, b) => {
@@ -96,11 +128,6 @@ export async function chooseUpstreams(env) {
 
       return a.index - b.index;
     });
-
-  const hasHealthy = ranked.some((item) => item.healthy);
-  if (!hasHealthy) {
-    return [upstreams[0], ...upstreams.slice(1)];
-  }
 
   return ranked.map((item) => item.url);
 }

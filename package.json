@@ -1,11 +1,12 @@
 {
   "name": "nginx-cf",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --input-type=module -e \"import('./src/index.js').then(() => console.log('ok'))\"",
-    "deploy": "wrangler deploy"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "node --input-type=module -e \"import('./src/index.js').then(() => console.log('syntax ok'))\""
   },
   "devDependencies": {
     "wrangler": "^3.57.2"

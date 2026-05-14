@@ -1,403 +1,281 @@
 # Nginx-CF
 
-一个基于 Cloudflare Worker 的多上游反向代理项目，支持健康检查、故障转移、KV 配置和 Cloudflare 优选 IP 接入。
+一个基于 Cloudflare Worker 的多上游反向代理项目，支持健康检查、故障转移、KV 持久化和 Cloudflare 优选 IP。
+
+**新手友好**：部署完成后访问 `/_admin` 页面，通过网页向导完成所有配置，无需改任何配置文件。
 
 ## 功能列表
 
-- 多上游反向代理：支持配置多个上游 URL，按健康状态动态转发
-- 自动故障转移：当上游 5xx、超时或网络错误时，自动重试其他上游
-- Cron 健康检查：通过 Worker Scheduled/Cron Trigger 定期探测上游可用性
-- Workers KV 配置存储：保存上游列表和健康状态
-- 管理 API：在线查看状态、更新上游列表
-- Cloudflare 优选 IP：内置分地区 IP 列表，可按需启用
-- WebSocket 透传：保留 Upgrade 头，兼容常见 WebSocket 代理场景
+- **多上游反向代理**：配置多个上游 URL，按健康状态动态转发
+- **自动故障转移**：上游 5xx / 超时 / 网络错误时，自动重试其他上游
+- **Cron 健康检查**：每 5 分钟自动探测上游可用性，HEAD 不支持时自动降级 GET
+- **KV 持久化**：管理员密码、上游列表、健康状态全部存入 Workers KV
+- **内存模式**：未绑定 KV 时自动降级为内存运行，无需强制配置 KV
+- **首次安装向导**：首次访问 `/_admin` 自动引导设置密码和上游，无需修改任何文件
+- **管理面板**：可视化查看上游状态、增删改上游、一键触发健康检查
+- **Cloudflare 优选 IP**：内置亚太 / 欧洲 / 美国三组优选 IP，随机选取降低单点压力
+- **WebSocket 透传**：正确处理 WebSocket 升级，兼容 ws:// 和 wss://
+- **请求转发安全**：body 直通（ReadableStream），不缓冲，大文件上传无压力
 
 ## 目录结构
 
 ```text
 Nginx-CF/
 ├── src/
-│   ├── index.js
-│   ├── proxy.js
-│   ├── upstream.js
-│   ├── config.js
-│   └── cf-ips.js
+│   ├── index.js       路由入口 + 管理 API
+│   ├── proxy.js       请求转发 + 优选 IP
+│   ├── upstream.js    健康检查 + 上游选优
+│   ├── config.js      KV / 内存存储层
+│   ├── cf-ips.js      Cloudflare 优选 IP 列表
+│   └── admin-ui.js    管理面板 + 首次安装向导 HTML
 ├── wrangler.toml
 ├── README.md
-├── package.json
-└── .gitignore
+└── package.json
 ```
 
 ---
 
-## 部署方式一：Cloudflare 控制台（推荐新手，全程不需要命令行）
+## 部署方式一：Cloudflare 控制台（推荐新手，全程无命令行）
 
-这套流程完全在浏览器里完成，不需要安装任何工具，跟着步骤一步一步做就行。
+整个流程在浏览器里完成，部署好之后访问管理面板用网页向导配置，**不需要改任何文件**。
 
 ### 准备工作
 
-在开始之前，你需要准备好以下内容：
-
-1. **Cloudflare 账号**：没有的话去 [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) 免费注册一个，填邮箱和密码即可，不需要绑定域名
-2. **GitHub 账号**：用来 Fork 本项目。没有的话去 [github.com](https://github.com) 免费注册
-3. **上游服务器地址**：也就是你真正的后端服务地址，例如 `https://your-server.example.com`
+- [Cloudflare 账号](https://dash.cloudflare.com/sign-up)（免费，不需要绑定域名）
+- [GitHub 账号](https://github.com)（用来 Fork 本项目）
+- 你的后端服务器地址（如 `https://your-server.example.com`）
 
 ---
 
-### 第一步：Fork 本项目到你的 GitHub
+### 第一步：Fork 本项目
 
-Fork 的意思是把这个项目复制一份到你自己的 GitHub 账号下，这样 Cloudflare 才能读取你的代码来部署。
+1. 打开 [github.com/Xiuyixx/Nginx-CF](https://github.com/Xiuyixx/Nginx-CF)
+2. 点击右上角 **Fork** → **Create fork**
+3. 稍等几秒，你的账号下会出现 `你的用户名/Nginx-CF`
 
-1. 打开本项目页面：[github.com/Xiuyixx/Nginx-CF](https://github.com/Xiuyixx/Nginx-CF)
-2. 点击页面右上角的 **Fork** 按钮
-3. 在弹出的页面中，直接点击 **Create fork**
-4. 稍等几秒，你的 GitHub 账号下就会出现一个同名的仓库副本，例如 `你的用户名/Nginx-CF`
-
-> Fork 完成后，后续所有配置修改都在你自己的仓库里进行，不会影响原项目。
+> Fork 完成后，所有配置都在你自己的仓库里，不会影响原项目。
 
 ---
 
-### 第二步：在 `wrangler.toml` 里填写非敏感配置
+### 第二步：创建 Workers KV 命名空间
 
-> 🔒 **重要安全说明**
->
-> 如果你的仓库是**公开的（Public）**，`wrangler.toml` 里的所有内容都能被任何人看到。
-> 因此，**`UPSTREAMS`（你的服务器地址）和 `ADMIN_TOKEN`（管理密钥）绝对不能写在这个文件里**，
-> 否则相当于把你的后端地址和密码公开贴在网上。
->
-> 这两项敏感配置需要在后续步骤中通过 Cloudflare 控制台单独设置，不会出现在代码里。
-
-`wrangler.toml` 里只需要修改以下**非敏感**的内容：
-
-1. 打开你 Fork 的仓库（`github.com/你的用户名/Nginx-CF`）
-2. 点击仓库文件列表中的 **`wrangler.toml`** 文件
-3. 点击右上角的铅笔图标（✏️）进入编辑模式
-4. 找到 `[vars]` 部分，只需根据需要修改以下两个非敏感项：
-
-```toml
-[vars]
-# ⚠️  UPSTREAMS 和 ADMIN_TOKEN 请勿直接写在这里（公开仓库会泄露）
-# 请在 Cloudflare Dashboard → Worker → Settings → Variables 中单独添加这两项
-USE_CF_IPS = "false"       # 暂时不需要优选 IP 的话保持 false
-PREFERRED_REGION = "apac"  # 地区：apac（亚太）/ europe / us
-```
-
-5. 修改完成后，滚动到页面底部，点击 **Commit changes** 确认保存
-
-> `UPSTREAMS` 和 `ADMIN_TOKEN` 不用在这里填——**第五步**会教你在 Cloudflare 控制台里安全地添加它们，仓库里不会有任何痕迹。
-
----
-
-### 第三步：创建 Workers KV 命名空间
-
-KV 是 Cloudflare 提供的键值存储，用来保存上游列表和健康检查结果。
+> **KV 是可选的**。不创建 KV 也能正常运行，但数据存在内存里，Worker 重启后会丢失。建议创建。
 
 1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
-2. 在左侧菜单中，点击 **Workers & Pages**，再点击 **KV**
-3. 点击右上角 **Create a namespace**
-4. 名称填写 `KV`，点击 **Add** 创建
-5. 创建成功后，在列表中可以看到这个命名空间，旁边有一串 **ID**（形如 `a1b2c3d4...`）
-6. **复制这个 ID**，后面第四步要用到
+2. 左侧点击 **Workers & Pages** → **KV**
+3. 右上角点击 **Create a namespace**，名称填 `KV`，点击 **Add**
+4. 创建后复制旁边的 **ID**（形如 `abc123...`）
 
 ---
 
-### 第四步：在 GitHub 仓库里填入 KV 的 ID
+### 第三步：把 KV 的 ID 填入仓库
 
-1. 回到你 Fork 的 GitHub 仓库
-2. 再次打开 `wrangler.toml` 文件，点击铅笔图标编辑
-3. 找到以下这段内容：
+1. 打开你 Fork 的仓库，点击 **`wrangler.toml`** 文件
+2. 点击右上角铅笔（✏️）编辑
+3. 找到这一行，替换 `YOUR_KV_NAMESPACE_ID`：
 
 ```toml
-[[kv_namespaces]]
-binding = "KV"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "YOUR_KV_NAMESPACE_ID"   # ← 替换为你第二步复制的 ID
 ```
 
-4. 把 `YOUR_KV_NAMESPACE_ID` 替换成第三步复制的 KV 命名空间 ID
-5. 滚动到底部，点击 **Commit changes** 保存
+4. 滚动到底部，点击 **Commit changes** 保存
+
+> 如果你不打算用 KV，可以跳过第二、三步，直接进入第四步。
 
 ---
 
-### 第五步：将项目连接到 Cloudflare Pages 并部署
+### 第四步：将项目部署到 Cloudflare
 
-Cloudflare Pages 可以直接读取你 GitHub 仓库的代码，自动构建并部署为 Worker。
+1. 在 Cloudflare Dashboard，点击 **Workers & Pages** → **Create application** → **Pages**
+2. 点击 **Connect to Git** → 选择 **GitHub** → 授权 Cloudflare 访问你的账号
+3. 在仓库列表中选择 **Nginx-CF**，点击 **Begin setup**
+4. 配置页：
+   - **Project name**：随意，如 `nginx-cf`
+   - **Production branch**：`main`
+   - **Build command** 和 **Build output directory** 均留空
+5. 点击 **Save and Deploy**，等待约 1~2 分钟
 
-1. 在 Cloudflare Dashboard 左侧点击 **Workers & Pages**
-2. 点击 **Create application**，选择 **Pages** 标签
-3. 点击 **Connect to Git**
-4. 选择 **GitHub**，授权 Cloudflare 访问你的 GitHub 账号
-5. 在仓库列表中找到并选择 **Nginx-CF**，点击 **Begin setup**
-6. 在构建配置页面，填写以下内容：
-   - **Project name**：随意起名，例如 `nginx-cf`
-   - **Production branch**：选 `main`
-   - **Build command**：填 `npm run build`（如果没有 build 脚本，留空也可以）
-   - **Build output directory**：留空
-7. 点击 **Save and Deploy**，等待部署完成（通常 1~2 分钟）
-
-> 如果部署失败，可以尝试改用下面的「直接创建 Worker」方式（见备选方案）。
+部署完成后会给你一个 `https://nginx-cf.xxx.pages.dev` 地址（或 `*.workers.dev`）。
 
 ---
 
-### 第六步：在控制台安全添加敏感环境变量
+### 第五步：绑定 KV（如果你创建了 KV）
 
-这是保护你隐私的关键一步。`UPSTREAMS`（你的服务器地址）和 `ADMIN_TOKEN`（管理密钥）不写进代码仓库，而是直接在 Cloudflare 控制台里加密保存，只有你的 Worker 运行时才能读到，任何人翻你的 GitHub 都看不到。
-
-1. 在 Cloudflare Dashboard，进入 **Workers & Pages** → 找到你刚部署的项目，点击进入
-2. 点击顶部的 **Settings** 标签
-3. 找到 **Variables and Secrets** 区域（或 **Environment Variables**），点击 **Add variable**
-4. 依次添加以下两个变量（每次填完点 **Add variable** 再继续下一个）：
-
-   | 变量名 | 类型 | 填写内容 |
-   |------|------|------|
-   | `UPSTREAMS` | Text | 你的上游地址，多个用英文逗号分隔，例如 `https://a.example.com,https://b.example.com` |
-   | `ADMIN_TOKEN` | Secret | 一个随机的长密码，建议用密码管理器生成，例如 `xK9#mP2$qR7nL4vZ` |
-
-   > 💡 **类型选 Secret**：`ADMIN_TOKEN` 建议选 **Secret** 类型（而不是 Text），这样就算 Cloudflare 内部员工也看不到明文，更安全。
-
-5. 全部添加完成后，点击 **Save and deploy**，等待重新部署
-
-> ✅ 你的 GitHub 仓库里完全没有任何敏感信息，对外公开也没有安全风险。
+1. 进入刚部署的项目 → **Settings** → **Bindings**
+2. 点击 **Add** → 选择 **KV namespace**
+3. **Variable name** 填 `KV`，**KV namespace** 选你创建的命名空间
+4. 点击 **Save**，等待重新部署
 
 ---
 
-### 第七步：绑定 KV 命名空间到 Worker
+### 第六步：访问管理面板，通过向导完成配置
 
-部署完成后，还需要让 Worker 能访问第三步创建的 KV。
+1. 打开 `https://你的Worker地址/_admin`
+2. 首次访问会自动进入**安装向导**：
 
-1. 在 Cloudflare Dashboard，进入 **Workers & Pages** → 找到你刚部署的项目，点击进入
-2. 点击顶部的 **Settings** 标签
-3. 找到 **Bindings** 区域，点击 **Add** → 选择 **KV namespace**
-4. 填写：
-   - **Variable name**：`KV`（必须完全一致，区分大小写）
-   - **KV namespace**：从下拉列表中选择第三步创建的 `KV`
-5. 点击 **Save** 保存
+   **第一步** — 设置管理员密码（至少 8 位，请妥善保存）
+
+   **第二步** — 填写上游地址（每行一个，支持多个）
+
+   **第三步** — 完成，点击「进入管理面板」
+
+3. 之后登录面板即可管理上游、触发健康检查、查看状态
+
+> ✅ **安全说明**：管理员密码加密存储在 KV 里，不会出现在代码或配置文件中。
 
 ---
 
 ### 第七步：配置 Cron 触发器（自动健康检查）
 
-这一步让 Worker 每 5 分钟自动探测一次上游是否可用。
-
-1. 在 Worker 项目页面，点击 **Settings** → **Triggers**（或 **Cron Triggers**）
-2. 点击 **Add Cron Trigger**
-3. 在输入框中填写：`*/5 * * * *`
-4. 点击 **Add Trigger** 保存
+1. 进入 Worker/Pages 项目 → **Settings** → **Triggers / Cron Triggers**
+2. 点击 **Add Cron Trigger**，填入 `*/5 * * * *`
+3. 点击 **Add Trigger**
 
 ---
 
 ### 第八步：绑定自定义域名（可选）
 
-默认情况下，你的 Worker 会分配一个 `*.workers.dev` 的地址，可以直接使用。如果你想用自己的域名（例如 `proxy.example.com`），需要满足以下条件：该域名已经托管在 Cloudflare（即已添加到你的 Cloudflare 账号并将 DNS 解析交给 Cloudflare 管理）。
+域名需已托管在 Cloudflare：
 
-1. 进入 Worker 项目页面，点击 **Settings** → **Domains & Routes**
-2. 点击 **Add** → 选择 **Custom domain**
-3. 输入你的域名，例如 `proxy.example.com`
-4. 点击 **Add Custom Domain** 确认
-
-Cloudflare 会自动配置好 DNS，通常几分钟内生效。
+1. 进入项目 → **Settings** → **Domains & Routes** → **Add** → **Custom domain**
+2. 输入域名（如 `proxy.example.com`），点击 **Add Custom Domain**
 
 ---
 
-### 验证是否部署成功
+### 验证部署
 
-打开浏览器，访问你的 Worker 地址（形如 `https://nginx-cf.你的账号.workers.dev`），如果页面能正常打开，说明基本部署成功。
-
-进一步验证管理接口是否工作，可以用以下方式：
-
-**方式 A（推荐新手）**：在浏览器地址栏访问
-```
-https://nginx-cf.你的账号.workers.dev/_admin/status
-```
-会提示需要鉴权（返回 401），这是正常的，说明接口已上线。
-
-**方式 B（命令行）**：
-```bash
-curl -sS "https://nginx-cf.你的账号.workers.dev/_admin/status" \
-  -H "X-Admin-Token: 你设置的ADMIN_TOKEN"
-```
-
-返回类似以下内容则说明一切正常：
-
-```json
-{
-  "upstreams": [
-    {
-      "url": "https://你的服务器.com",
-      "healthy": true,
-      "latency": 98,
-      "lastCheck": "2026-05-14T01:00:00.000Z",
-      "status": 200
-    }
-  ]
-}
-```
-
----
-
-### 备选方案：直接在控制台粘贴代码
-
-如果不想用 Pages 连接 GitHub，也可以直接手动创建 Worker 并粘贴代码：
-
-1. 在 Cloudflare Dashboard，进入 **Workers & Pages** → **Create application** → **Create Worker**
-2. 给 Worker 起个名字（例如 `nginx-cf`），点击 **Deploy**
-3. 部署后点击 **Edit code** 进入在线编辑器
-4. 在编辑器左侧文件树中，点击 `+` 按钮新建 `src/` 文件夹
-5. 在 `src/` 下依次新建以下文件，并将 GitHub 仓库中对应文件的内容**完整复制粘贴**进去：
-   - `src/index.js`
-   - `src/proxy.js`
-   - `src/upstream.js`
-   - `src/config.js`
-   - `src/cf-ips.js`
-   - `src/admin-ui.js`
-6. 点击编辑器右上角 **Save and deploy**
-7. 然后继续执行上面的第六、七、八步（绑定 KV、配置 Cron、绑定域名）
+- 访问 `https://你的Worker地址` — 应该能看到你的后端响应
+- 访问 `https://你的Worker地址/_admin` — 应该打开管理面板
 
 ---
 
 ## 部署方式二：Wrangler CLI（推荐有开发经验的用户）
 
-### 1. 安装依赖和 Wrangler
-
 ```bash
+# 1. 克隆仓库
+git clone https://github.com/Xiuyixx/Nginx-CF.git && cd Nginx-CF
+
+# 2. 安装依赖
 npm install
-npm install -g wrangler
-wrangler login
-```
 
-### 2. 创建 Workers KV
+# 3. 登录 Cloudflare
+npx wrangler login
 
-```bash
-wrangler kv namespace create KV
-```
+# 4. 创建 KV（可选）
+npx wrangler kv namespace create KV
+# 把返回的 id 填入 wrangler.toml 的 kv_namespaces.id
 
-把返回的 namespace id 填到 `wrangler.toml`：
-
-```toml
-[[kv_namespaces]]
-binding = "KV"
-id = "YOUR_KV_NAMESPACE_ID"
-```
-
-### 3. 修改默认配置
-
-编辑 `wrangler.toml`：
-
-- `UPSTREAMS`：默认上游，多个用英文逗号分隔
-- `ADMIN_TOKEN`：管理 API 鉴权 token
-- `USE_CF_IPS`：是否启用 Cloudflare 优选 IP，`true/false`
-- `PREFERRED_REGION`：优选 IP 地区，支持 `apac` / `europe` / `us`
-
-### 4. 部署
-
-```bash
+# 5. 部署
 npm run deploy
+
+# 本地开发预览
+npm run dev
 ```
+
+部署完成后同样访问 `/_admin` 用向导完成配置。
+
+---
+
+## 管理面板功能
+
+| 功能 | 说明 |
+|------|------|
+| 上游列表 | 左侧侧边栏展示所有上游及健康状态 |
+| 状态表格 | 延迟、最后检查时间、健康状态 |
+| ⚡ 立即健康检查 | 手动触发一次所有上游的健康探测 |
+| ＋ 添加上游 | 弹窗输入新的上游地址 |
+| 编辑 / 删除 | 修改或移除已有上游 |
+| KV 状态标签 | 顶栏显示是否已绑定 KV，内存模式会有提示 |
 
 ---
 
 ## 配置说明
 
-### 环境变量
+所有配置均可通过管理面板或 Cloudflare 控制台的 **Variables and Secrets** 设置。
 
-| 变量名             | 说明                                                   |
-| ---------------- | ------------------------------------------------------ |
-| `UPSTREAMS`      | 默认上游列表，例如 `https://a.example.com,https://b.example.com` |
-| `ADMIN_TOKEN`    | 管理 API token                                         |
-| `USE_CF_IPS`     | 是否启用内置优选 IP（`true` / `false`）                   |
-| `PREFERRED_REGION` | 优选 IP 地区（`apac` / `europe` / `us`）               |
-
-### KV 结构
-
-- `upstreams`
-
-```json
-["https://a.example.com", "https://b.example.com"]
-```
-
-- `upstream_health`
-
-```json
-[
-  {
-    "url": "https://a.example.com",
-    "healthy": true,
-    "latency": 123,
-    "lastCheck": "2026-05-14T01:00:00.000Z",
-    "status": 200
-  }
-]
-```
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `UPSTREAMS` | — | 上游地址，多个用逗号分隔（向导配置后无需此项） |
+| `ADMIN_TOKEN` | — | 管理员密码（向导配置后存储在 KV，无需此项） |
+| `USE_CF_IPS` | `false` | 是否启用 Cloudflare 优选 IP |
+| `PREFERRED_REGION` | `apac` | 优选 IP 地区：`apac` / `europe` / `us` |
+| `HEALTH_CHECK_PATH` | `/` | 健康检查探测路径 |
+| `REQUEST_TIMEOUT_MS` | `10000` | 代理请求超时（毫秒） |
+| `HEALTH_TIMEOUT_MS` | `5000` | 健康检查超时（毫秒） |
+| `CF_IP_INDEX` | — | 固定使用第几个优选 IP（留空则随机） |
 
 ---
 
 ## 管理 API
 
-所有管理接口都要求带上 `X-Admin-Token` 请求头。
-
-### 查看健康状态
+所有 API 需要 `X-Admin-Token` 请求头（向导设置的密码）。
 
 ```bash
-curl -sS "https://your-worker.example.workers.dev/_admin/status" \
-  -H "X-Admin-Token: change-me"
-```
+# 查看上游和健康状态
+curl "https://你的Worker/_admin/status" -H "X-Admin-Token: 你的密码"
 
-### 更新上游列表
-
-```bash
-curl -sS -X POST "https://your-worker.example.workers.dev/_admin/upstreams" \
+# 更新上游列表
+curl -X POST "https://你的Worker/_admin/upstreams" \
+  -H "X-Admin-Token: 你的密码" \
   -H "Content-Type: application/json" \
-  -H "X-Admin-Token: change-me" \
-  --data '{"upstreams":["https://a.example.com","https://b.example.com"]}'
+  -d '{"upstreams":["https://a.example.com","https://b.example.com"]}'
+
+# 手动触发健康检查
+curl -X POST "https://你的Worker/_admin/trigger-health" \
+  -H "X-Admin-Token: 你的密码"
+
+# 查询是否已完成初始化
+curl "https://你的Worker/_admin/setup-status"
 ```
 
 ---
 
 ## 健康检查与选优逻辑
 
-- Cron 每 5 分钟执行一次 `HEAD` 健康探测
-- 单个上游超时为 5 秒
-- 优先选择"健康且延迟最低"的上游
-- 若全部不健康，则回退到第一个上游（fail-open）
-- 请求转发时最多尝试 3 个上游
+- Cron 每 5 分钟自动探测一次（`HEAD`，失败则降级 `GET`）
+- 超时默认 5 秒，可通过 `HEALTH_TIMEOUT_MS` 调整
+- 优先选择「健康且延迟最低」的上游
+- 尚无健康数据时按配置顺序轮询（不退化到只用第一个）
+- 全部不健康时 fail-open，退回第一个上游
+- 单次请求最多重试 3 个上游
+- `latency = -1` 表示探测超时
 
 ---
 
 ## Cloudflare 优选 IP 说明
 
-`src/cf-ips.js` 内置了亚太、欧洲、美国三组常用优选 IP 示例。
+`src/cf-ips.js` 内置亚太、欧洲、美国三组优选 IP，每次请求随机选取一个（或通过 `CF_IP_INDEX` 固定）。
 
-用途：
+**适用场景**：你的上游挂在 Cloudflare，可以通过指定优选节点 IP + 保留原始 `Host` header 减少跨区绕路。
 
-- 在你的源站或前置网络已经支持"直连优选节点 + Host 回源"时，减少跨区绕路
-- 在不同地区做简单的链路偏好控制
-
-启用方法：
-
-1. 将 `USE_CF_IPS` 设为 `true`
-2. 将 `PREFERRED_REGION` 设为目标地区
-3. Worker 转发时会把上游 hostname 替换成优选 IP，并保留原始 `Host` header
-
-> 注意：如果你的上游是 HTTPS，且证书不支持直接用 IP 建连，可能需要你自己的源站/SNI 方案配合。这部分依赖你的实际网络架构。
+**注意**：若上游 HTTPS 证书不支持直接 IP 建连，需配合自己的 SNI 方案。优选 IP 不可用时自动 fallback 到原始域名直连。
 
 ---
 
-## 与 Nginx-X 的关系
+## 与 Nginx-X 配合使用
 
-Nginx-X 偏向服务器侧的 Nginx 配置和运维自动化；Nginx-CF 则把反向代理层前移到 Cloudflare Worker：
+| 角色 | 工具 |
+|------|------|
+| 源站 / 服务器侧 Nginx 运维 | **Nginx-X** |
+| 公网入口代理 / 上游健康切换 | **Nginx-CF** |
 
-- Nginx-X：管理本机或服务器上的 Nginx
-- Nginx-CF：运行在 Cloudflare 边缘，负责请求入口、上游选优和故障切换
-
-两者可以组合使用：
-
-- Nginx-X 作为源站或源站管理工具
-- Nginx-CF 作为公网入口代理与健康切换层
+两者组合：Nginx-X 管理本机 Nginx，Nginx-CF 作为 Cloudflare 边缘层做入口代理和健康切换。
 
 ---
 
-## 本地检查
+## 常见问题
 
-```bash
-npm install
-npm run check
-```
+**Q：首次访问 `/_admin` 没有出现向导，而是显示登录页？**
+A：说明 Worker 检测到 `ADMIN_TOKEN` 环境变量已设置（视为已初始化），或 KV 中已有 `setup_done` 标记。可以用已设置的 token 登录，或清空 KV 后重新访问。
+
+**Q：忘记管理员密码怎么办？**
+A：进入 Cloudflare Dashboard → Workers KV → 找到你的命名空间 → 删除 `admin_token` 和 `setup_done` 这两个 key，然后重新访问 `/_admin` 走一遍向导。
+
+**Q：没有创建 KV 可以用吗？**
+A：可以。没有 KV 时会以内存模式运行，面板顶部会显示「KV 内存模式」提示。功能完整，但 Worker 重启后配置会丢失。建议生产环境绑定 KV。
+
+**Q：部署后访问 `/_admin` 显示 `Setup requires KV binding`？**
+A：向导需要 KV 来保存初始化数据。请先完成第二、三、五步（创建并绑定 KV），或者直接在 Cloudflare 控制台 Settings → Variables 里设置 `ADMIN_TOKEN` 和 `UPSTREAMS` 跳过向导。
+
+**Q：Cron 触发器配置后没有自动检查？**
+A：Cron 触发器需要在 Cloudflare Dashboard 的 Worker 项目 → Settings → Triggers 里手动添加 `*/5 * * * *`，确认已添加。也可以在管理面板点「立即健康检查」手动触发。
