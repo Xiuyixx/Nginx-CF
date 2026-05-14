@@ -201,7 +201,7 @@ export function getAdminHTML() {
           </div>
           <div class="settings-help">
             <div class="settings-help-title">转发说明</div>
-            Worker 会连接这里填写的地址，但 <code>Host</code> 仍保持 Emby 上游域名。多个地址会随机选择一个。
+            Worker 会优先尝试这里填写的地址，但 <code>Host</code> 仍保持 Emby 上游域名。若 Cloudflare 返回 1003，会自动回退原上游。
           </div>
         </div>
       </div>

@@ -197,6 +197,8 @@ proxy.example.com:443
 
 保存后立即生效。绑定 KV 时会持久保存；未绑定 KV 时只在当前 Worker 内存中临时生效，Worker 重启后会丢失。
 
+注意：Cloudflare Workers 对直接 fetch IP 有限制。若填写的纯 IP 触发 Cloudflare `1003 Direct IP access not allowed`，EMBY-CF 会自动回退到原上游域名，避免 Emby 客户端登录失败。需要强制走优选线路时，建议填写可解析到优选 IP 的代理域名 / 中转域名。
+
 **方式二：Cloudflare Dashboard 配置**
 
 1. Cloudflare Dashboard → Workers & Pages → 你的 Worker

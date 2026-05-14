@@ -90,25 +90,50 @@ function cloneRequestBody(bodyBuffer) {
   return bodyBuffer ? bodyBuffer.slice(0) : undefined;
 }
 
-async function fetchUpstream(request, upstream, init, timeoutMs, env) {
-  let targetUrl = createTargetUrl(request, upstream).toString();
+function cloneFetchInit(init) {
+  return {
+    ...init,
+    headers: new Headers(init.headers),
+    body: init.body instanceof ArrayBuffer ? init.body.slice(0) : init.body
+  };
+}
 
-  // 优选 IP：把目标 URL 的 hostname 替换为优选 IP，Host header 已在 init 里设好
-  if (env) {
-    const ip = await pickPreferredIP(env);
-    if (ip) {
-      const { url } = applyPreferredIP(targetUrl, ip);
-      targetUrl = url;
-    }
-  }
-
-  const responsePromise = fetch(targetUrl, init);
+async function fetchWithOptionalTimeout(url, init, timeoutMs) {
+  const responsePromise = fetch(url, init);
 
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return responsePromise;
   }
 
   return withTimeout(responsePromise, timeoutMs);
+}
+
+async function isCloudflareDirectIPError(response) {
+  if (response.status !== 403) {
+    return false;
+  }
+
+  const text = await response.clone().text().catch(() => '');
+  return text.includes('error code: 1003') || text.includes('Direct IP access not allowed');
+}
+
+async function fetchUpstream(request, upstream, init, timeoutMs, env, preferredIp = null) {
+  const originalUrl = createTargetUrl(request, upstream).toString();
+
+  if (!preferredIp) {
+    return fetchWithOptionalTimeout(originalUrl, init, timeoutMs);
+  }
+
+  // Cloudflare Workers 对直接 fetch IP 有限制；若优选 IP 触发 1003，则自动回退原上游域名，避免客户端登录失败。
+  const { url: preferredUrl } = applyPreferredIP(originalUrl, preferredIp);
+  const preferredResponse = await fetchWithOptionalTimeout(preferredUrl, cloneFetchInit(init), timeoutMs);
+
+  if (await isCloudflareDirectIPError(preferredResponse)) {
+    console.warn(`Preferred IP ${preferredIp} triggered Cloudflare 1003, fallback to original upstream ${upstream}`);
+    return fetchWithOptionalTimeout(originalUrl, cloneFetchInit(init), timeoutMs);
+  }
+
+  return preferredResponse;
 }
 
 function createProxyInit(request, upstream, bodyBuffer, redirectMode, allowStreamingBody = false, overrideHost = null) {
@@ -174,7 +199,7 @@ async function handleMediaProxyRequest(request, env, orderedUpstreams) {
   }
 
   const init = createProxyInit(request, upstream, null, 'follow', true, overrideHost);
-  const response = await fetchUpstream(request, upstream, init, 0, env);
+  const response = await fetchUpstream(request, upstream, init, 0, env, preferredIp);
 
   if (isWebSocketRequest(request)) {
     if (response.status === 101 && response.webSocket) {
@@ -204,7 +229,7 @@ async function handleApiProxyRequest(request, env, orderedUpstreams) {
       }
 
       const init = createProxyInit(request, upstream, bodyBuffer, 'follow', false, overrideHost);
-      const response = await fetchUpstream(request, upstream, init, timeoutMs, env);
+      const response = await fetchUpstream(request, upstream, init, timeoutMs, env, preferredIp);
 
       if (shouldRetry(response, null)) {
         errors.push({ upstream, status: response.status });
