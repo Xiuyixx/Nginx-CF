@@ -124,17 +124,18 @@ async function handleAdmin(request, env) {
       return json({ error: 'Token must be at least 8 characters' }, 400);
     }
 
-    if (!Array.isArray(upstreams) || upstreams.length === 0) {
-      return json({ error: 'Body must include a non-empty upstreams array' }, 400);
-    }
-
-    if (!upstreams.every(isValidUpstreamEntry)) {
-      return json({ error: 'All upstream URLs must use http:// or https://' }, 400);
+    // 上游地址可选：有则校验并写入，无则跳过
+    if (upstreams !== undefined && upstreams !== null) {
+      if (!Array.isArray(upstreams) || !upstreams.every(isValidUpstreamEntry)) {
+        return json({ error: 'All upstream URLs must use http:// or https://' }, 400);
+      }
     }
 
     try {
       await completeSetup(env, token);
-      await setUpstreams(env, upstreams);
+      if (Array.isArray(upstreams) && upstreams.length > 0) {
+        await setUpstreams(env, upstreams);
+      }
     } catch (error) {
       return json({ error: error.message }, 400);
     }

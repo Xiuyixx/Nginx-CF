@@ -113,15 +113,16 @@ export function getAdminHTML() {
     <!-- Step 1: Upstreams -->
     <div id="step1" class="hidden">
       <div class="step-title">第二步：填写上游地址</div>
-      <div class="step-desc">填写你的后端服务器地址，每行一个，支持多个地址自动健康选优。</div>
+      <div class="step-desc">填写你的后端服务器地址，每行一个，支持多个地址自动健康选优。<br><span style="color:var(--muted)">也可以跳过，进入面板后再添加。</span></div>
       <div class="field">
-        <label>上游地址（每行一个）</label>
+        <label>上游地址（每行一个，可选）</label>
         <textarea id="s1upstreams" rows="4" placeholder="https://your-server.example.com&#10;https://backup.example.com"></textarea>
       </div>
       <div class="error-msg" id="s1err"></div>
       <div style="display:flex;gap:8px">
         <button onclick="gotoStep(0)" style="flex:1">← 上一步</button>
-        <button class="primary" style="flex:2" onclick="submitSetup()">完成初始化</button>
+        <button onclick="submitSetup(false)" style="flex:1">跳过</button>
+        <button class="primary" style="flex:2" onclick="submitSetup(true)">完成初始化</button>
       </div>
     </div>
 
@@ -264,13 +265,12 @@ function goStep1() {
   s0token = t;
   gotoStep(1);
 }
-async function submitSetup() {
+async function submitSetup(requireUpstreams) {
   const raw = document.getElementById('s1upstreams').value;
   const upstreams = raw.split('\\n').map(s => s.trim()).filter(Boolean);
   const err = document.getElementById('s1err');
-  if (upstreams.length === 0) { err.textContent = '请至少填写一个上游地址'; return; }
-  const btn = document.querySelector('#step1 button.primary');
-  if (btn) btn.disabled = true;
+  if (requireUpstreams && upstreams.length === 0) { err.textContent = '请至少填写一个上游地址'; return; }
+  document.querySelectorAll('#step1 button').forEach(b => b.disabled = true);
   err.textContent = '提交中…';
   const res = await fetch('/_admin/setup', {
     method: 'POST',
@@ -279,7 +279,7 @@ async function submitSetup() {
   });
   const data = await res.json();
   // 无 KV 时同一 Worker 实例内存已标记完成，幂等视为成功
-  if (!res.ok && res.status !== 409) { if (btn) btn.disabled = false; err.textContent = data.error || '初始化失败'; return; }
+  if (!res.ok && res.status !== 409) { document.querySelectorAll('#step1 button').forEach(b => b.disabled = false); err.textContent = data.error || '初始化失败'; return; }
   TOKEN = s0token;
   sessionStorage.setItem('ngx_token', TOKEN);
   document.getElementById('workerUrl').textContent = location.origin + '/_admin';
