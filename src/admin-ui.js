@@ -269,6 +269,8 @@ async function submitSetup() {
   const upstreams = raw.split('\\n').map(s => s.trim()).filter(Boolean);
   const err = document.getElementById('s1err');
   if (upstreams.length === 0) { err.textContent = '请至少填写一个上游地址'; return; }
+  const btn = document.querySelector('#step1 button.primary');
+  if (btn) btn.disabled = true;
   err.textContent = '提交中…';
   const res = await fetch('/_admin/setup', {
     method: 'POST',
@@ -276,7 +278,8 @@ async function submitSetup() {
     body: JSON.stringify({ token: s0token, upstreams })
   });
   const data = await res.json();
-  if (!res.ok) { err.textContent = data.error || '初始化失败'; return; }
+  // 无 KV 时同一 Worker 实例内存已标记完成，幂等视为成功
+  if (!res.ok && res.status !== 409) { if (btn) btn.disabled = false; err.textContent = data.error || '初始化失败'; return; }
   TOKEN = s0token;
   sessionStorage.setItem('ngx_token', TOKEN);
   document.getElementById('workerUrl').textContent = location.origin + '/_admin';

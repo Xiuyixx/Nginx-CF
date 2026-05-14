@@ -104,6 +104,10 @@ async function handleAdmin(request, env) {
     const setupDone = await isSetupDone(env);
 
     if (setupDone) {
+      // 无 KV 时内存跨请求不持久，同一 Worker 实例内重复提交视为幂等成功
+      if (!hasKV(env)) {
+        return json({ ok: true, memoryMode: true, setupDone: true });
+      }
       return json({ error: 'Setup already completed' }, 409);
     }
 
