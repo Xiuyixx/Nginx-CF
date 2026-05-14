@@ -5,7 +5,7 @@
 # 部署完成后访问 https://你的Worker地址/_admin 通过网页向导完成 Emby 上游配置
 # 无需修改本文件！
 
-name = "emby-cf"
+name = "nginxcf"
 main = "src/index.js"
 compatibility_date = "2024-06-01"
 
