@@ -1,4 +1,4 @@
-# Emby-CF
+# EMBY-CF
 
 一个专为 **Emby 媒体服务器反代加速** 优化的 Cloudflare Worker。
 
@@ -19,7 +19,7 @@
 ## 项目结构
 
 ```text
-Emby-CF/
+EMBY-CF/
 ├── src/
 │   ├── index.js       入口与管理 API
 │   ├── router.js      Emby 请求分类
@@ -47,8 +47,8 @@ Emby-CF/
 ### 方式二：Wrangler CLI
 
 ```bash
-git clone https://github.com/Xiuyixx/Nginx-CF.git
-cd Nginx-CF
+git clone https://github.com/Xiuyixx/EMBY-CF.git
+cd EMBY-CF
 npm install
 npm run deploy
 ```

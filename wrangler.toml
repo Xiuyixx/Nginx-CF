@@ -1,4 +1,4 @@
-# Emby-CF - Cloudflare Worker Emby 反代加速
+# EMBY-CF - Cloudflare Worker Emby 反代加速
 # 文档：https://github.com/Xiuyixx/Nginx-CF
 #
 # 部署方式：Fork 本项目 → Cloudflare Workers / Pages 连接 GitHub → 直接部署

@@ -4,7 +4,7 @@ export function getAdminHTML() {
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Emby-CF 管理面板</title>
+  <title>EMBY-CF 管理面板</title>
   <style>
     :root{color-scheme:dark;--bg:#141414;--card:#1e1e1e;--border:#2a2a2a;--text:#f5f5f5;--muted:#9ca3af;--accent:#4f8cff;--accent-soft:rgba(79,140,255,.12);--success:#22c55e;--danger:#ef4444;--warning:#f59e0b;--shadow:0 18px 40px rgba(0,0,0,.28)}
     *{box-sizing:border-box}
@@ -88,7 +88,7 @@ export function getAdminHTML() {
 <body>
 <section id="setupView" class="setup-shell hidden">
   <div class="setup-card">
-    <div class="setup-logo">🎬 Emby-CF</div>
+    <div class="setup-logo">🎬 EMBY-CF</div>
     <div class="setup-sub">欢迎！先完成 Emby 反代加速初始化</div>
     <div class="step-indicator">
       <div class="step-dot active" id="dot0"></div>
@@ -121,7 +121,7 @@ export function getAdminHTML() {
       <div class="success-box">
         <div class="success-icon">✅</div>
         <div style="font-size:16px;font-weight:700;margin-bottom:6px">初始化完成！</div>
-        <div class="muted" style="font-size:13px">Emby-CF 已就绪，把 Worker 地址填到 Emby 客户端即可。</div>
+        <div class="muted" style="font-size:13px">EMBY-CF 已就绪，把 Worker 地址填到 Emby 客户端即可。</div>
       </div>
       <div id="memoryModeWarn" class="hidden" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px;color:#fcd34d">
         ⚠️ 当前运行在内存模式（未绑定 KV），配置将在 Worker 重启后丢失。如需持久化，请在 Cloudflare Dashboard → Worker → Settings → Bindings 里绑定 KV 命名空间。
@@ -134,7 +134,7 @@ export function getAdminHTML() {
 </section>
 <section id="loginView" class="login-shell hidden">
   <div class="login-card">
-    <div class="login-title">Emby-CF</div>
+    <div class="login-title">EMBY-CF</div>
     <div class="login-sub">输入管理员密码进入 Emby 反代加速面板</div>
     <div class="field" style="margin-top:16px"><label>管理员密码</label><input id="tokenInput" type="password" placeholder="X-Admin-Token" autocomplete="off"/></div>
     <div class="error-msg" id="loginErr"></div>
@@ -143,7 +143,7 @@ export function getAdminHTML() {
 </section>
 <section id="appView" class="app-shell hidden">
   <header class="topbar">
-    <div class="brand">Emby-CF</div>
+    <div class="brand">EMBY-CF</div>
     <div class="topbar-right">
       <span class="tag" id="kvTag">KV</span>
       <span class="tag" id="timeTag"></span>
@@ -187,7 +187,7 @@ export function getAdminHTML() {
       </div>
     </main>
   </div>
-  <footer class="footer">Emby-CF v2.0.0 · <span id="nowLabel"></span></footer>
+  <footer class="footer">EMBY-CF v2.0.0 · <span id="nowLabel"></span></footer>
 </section>
 <div id="modal" class="modal hidden">
   <div class="modal-card">
