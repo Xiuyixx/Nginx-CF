@@ -130,7 +130,10 @@ export function getAdminHTML() {
       <div class="success-box">
         <div class="success-icon">✅</div>
         <div style="font-size:16px;font-weight:700;margin-bottom:6px">初始化完成！</div>
-        <div class="muted" style="font-size:13px">你的 Nginx-CF 已就绪，可以开始使用了。</div>
+        <div class="muted" style="font-size:13px">Nginx-CF 已就绪，可以开始使用了。</div>
+      </div>
+      <div id="memoryModeWarn" class="hidden" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px;color:#fcd34d">
+        ⚠️ 当前运行在内存模式（未绑定 KV），配置将在 Worker 重启后丢失。如需持久化，请在 Cloudflare Dashboard → Worker → Settings → Bindings 里绑定 KV 命名空间。
       </div>
       <div class="step-desc">你的 Worker 地址：</div>
       <div class="url-box" id="workerUrl"></div>
@@ -276,6 +279,8 @@ async function submitSetup() {
   TOKEN = s0token;
   sessionStorage.setItem('ngx_token', TOKEN);
   document.getElementById('workerUrl').textContent = location.origin + '/_admin';
+  // 无 KV 时显示内存模式提醒
+  if (data.memoryMode) document.getElementById('memoryModeWarn').classList.remove('hidden');
   gotoStep(2);
 }
 function enterPanel() { show('appView'); loadStatus(); }
@@ -312,7 +317,7 @@ async function applyStatus(data) {
   allHealth = data.health || [];
   const kvTag = document.getElementById('kvTag');
   if (data.hasKV) { kvTag.textContent = 'KV ✓'; kvTag.className = 'tag ok'; }
-  else { kvTag.textContent = 'KV 内存模式'; kvTag.className = 'tag warn'; }
+  else { kvTag.textContent = '⚠️ 内存模式（重启丢失）'; kvTag.className = 'tag warn'; }
   document.getElementById('timeTag').textContent = new Date(data.now || Date.now()).toLocaleTimeString('zh-CN');
   document.getElementById('nowLabel').textContent = '当前时间 ' + new Date().toLocaleString('zh-CN');
   renderSidebar();

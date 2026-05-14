@@ -26,7 +26,9 @@ function getMemoryState(env) {
   if (!env.__MEMORY_STATE__) {
     env.__MEMORY_STATE__ = {
       upstreams: null,
-      health: []
+      health: [],
+      adminToken: null,
+      setupDone: false
     };
   }
 
@@ -95,33 +97,39 @@ export async function setUpstreams(env, list) {
 }
 
 export async function getStoredAdminToken(env) {
-  if (!hasKV(env)) {
-    return null;
+  if (hasKV(env)) {
+    const token = await env.KV.get(ADMIN_TOKEN_KEY);
+    if (token) return String(token);
   }
-
-  const token = await env.KV.get(ADMIN_TOKEN_KEY);
-  return token ? String(token) : null;
+  // 内存模式：返回内存中保存的 token
+  return getMemoryState(env).adminToken || null;
 }
 
 export async function isSetupDone(env) {
-  if (!hasKV(env)) {
-    return Boolean(env.ADMIN_TOKEN);
+  // 已通过环境变量配置 ADMIN_TOKEN，视为已初始化，跳过向导
+  if (env.ADMIN_TOKEN) return true;
+
+  if (hasKV(env)) {
+    const flag = await env.KV.get(SETUP_DONE_KEY);
+    return String(flag || '').toLowerCase() === 'true';
   }
 
-  const flag = await env.KV.get(SETUP_DONE_KEY);
-  return String(flag || '').toLowerCase() === 'true';
+  // 内存模式：检查内存中的 setupDone 标记
+  return getMemoryState(env).setupDone === true;
 }
 
 export async function completeSetup(env, token) {
-  if (!hasKV(env)) {
-    throw new Error('KV binding is required for setup wizard');
-  }
-
   const safeToken = String(token || '').trim();
-  if (!safeToken) {
-    throw new Error('Admin token cannot be empty');
-  }
+  if (!safeToken) throw new Error('Admin token cannot be empty');
 
-  await env.KV.put(ADMIN_TOKEN_KEY, safeToken);
-  await env.KV.put(SETUP_DONE_KEY, 'true');
+  if (hasKV(env)) {
+    await env.KV.put(ADMIN_TOKEN_KEY, safeToken);
+    await env.KV.put(SETUP_DONE_KEY, 'true');
+  } else {
+    // 无 KV 时存入内存（重启后丢失，但当次可用）
+    console.warn('KV not bound: setup saved in memory mode (will reset on worker restart)');
+    const mem = getMemoryState(env);
+    mem.adminToken = safeToken;
+    mem.setupDone = true;
+  }
 }

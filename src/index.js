@@ -109,11 +109,12 @@ async function handleAdmin(request, env) {
 
     try {
       await completeSetup(env, token);
+      if (upstreams.length > 0) await setUpstreams(env, upstreams);
     } catch (error) {
       return json({ error: error.message }, 400);
     }
 
-    return json({ ok: true, setupDone: true });
+    return json({ ok: true, memoryMode: !env.KV, setupDone: true });
   }
 
   if (!(await isAuthorized(request, env))) {
