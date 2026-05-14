@@ -1,256 +1,192 @@
-# Nginx-CF
+# Emby-CF
 
-一个基于 Cloudflare Worker 的多上游反向代理项目，支持健康检查、故障转移、KV 持久化和 Cloudflare 优选 IP。
+一个专为 **Emby 媒体服务器反代加速** 优化的 Cloudflare Worker。
 
-**新手友好**：部署完成后访问 `/_admin` 页面，通过网页向导完成所有配置，无需改任何配置文件。
+你只需要在 Emby 客户端里填写一个 Worker 地址，后端多个 Emby 上游会自动健康检查、按健康度与延迟选优，并在 API 请求失败时自动切换节点。
 
 ## 功能列表
 
-- **多上游反向代理**：配置多个上游 URL，按健康状态动态转发
-- **自动故障转移**：上游 5xx / 超时 / 网络错误时，自动重试其他上游
-- **Cron 健康检查**：每 5 分钟自动探测上游可用性，HEAD 不支持时自动降级 GET
-- **KV 持久化**：管理员密码、上游列表、健康状态全部存入 Workers KV
-- **内存模式**：未绑定 KV 时自动降级为内存运行，无需强制配置 KV
-- **首次安装向导**：首次访问 `/_admin` 自动引导设置密码和上游，无需修改任何文件
-- **管理面板**：可视化查看上游状态、增删改上游、一键触发健康检查
-- **Cloudflare 优选 IP**：内置亚太 / 欧洲 / 美国三组优选 IP，随机选取降低单点压力
-- **WebSocket 透传**：正确处理 WebSocket 升级，兼容 ws:// 和 wss://
-- **请求转发安全**：body 直通（ReadableStream），不缓冲，大文件上传无压力
+- **Emby 专用路由**：自动区分媒体流请求与 API/普通请求
+- **媒体流优化**：跟随 301/302、透传 `Range`、保留 `Content-Length` / `Content-Range` / `Accept-Ranges`
+- **API 故障转移**：仅对 5xx / 网络错误重试，最多 3 次
+- **Emby 健康检查**：优先检查 `/health`，再回落 `/` 的 `HEAD` / `GET`
+- **智能选优**：优先健康节点，再按延迟排序
+- **KV 持久化**：管理员密码、上游列表、健康状态持久保存到 Workers KV
+- **内存模式**：未绑定 KV 也可运行，适合快速试用
+- **网页管理面板**：首次安装向导、节点管理、健康检查、状态展示
+- **WebSocket 透传**：兼容 Emby 相关长连接场景
 
-## 目录结构
+## 项目结构
 
 ```text
-Nginx-CF/
+Emby-CF/
 ├── src/
-│   ├── index.js       路由入口 + 管理 API
-│   ├── proxy.js       请求转发 + 优选 IP
-│   ├── upstream.js    健康检查 + 上游选优
-│   ├── config.js      KV / 内存存储层
-│   ├── cf-ips.js      Cloudflare 优选 IP 列表
-│   └── admin-ui.js    管理面板 + 首次安装向导 HTML
+│   ├── index.js       入口与管理 API
+│   ├── router.js      Emby 请求分类
+│   ├── proxy.js       媒体流 / API 代理逻辑
+│   ├── upstream.js    Emby 健康检查与选优
+│   ├── config.js      KV / 内存存储
+│   └── admin-ui.js    管理面板
 ├── wrangler.toml
-├── README.md
-└── package.json
+├── package.json
+└── README.md
 ```
 
----
+## 部署方式
 
-## 部署方式一：Cloudflare 控制台（推荐新手，全程无命令行）
+### 方式一：Fork → Cloudflare Workers / Pages
 
-整个流程在浏览器里完成，部署好之后访问管理面板用网页向导配置，**不需要改任何文件**。
+1. Fork 本项目到你自己的 GitHub 账号
+2. Cloudflare Dashboard → **Workers & Pages** → **Create application**
+3. 连接 GitHub，选择你 Fork 的仓库
+4. 保持默认构建配置，直接部署
+5. 部署完成后访问：`https://你的Worker地址/_admin`
 
-### 准备工作
+> 首次访问会进入向导，不需要手改代码。
 
-- [Cloudflare 账号](https://dash.cloudflare.com/sign-up)（免费，不需要绑定域名）
-- [GitHub 账号](https://github.com)（用来 Fork 本项目）
-- 你的后端服务器地址（如 `https://your-server.example.com`）
-
----
-
-### 第一步：Fork 本项目
-
-1. 打开 [github.com/Xiuyixx/Nginx-CF](https://github.com/Xiuyixx/Nginx-CF)
-2. 点击右上角 **Fork** → **Create fork**
-3. 稍等几秒，你的账号下会出现 `你的用户名/Nginx-CF`
-
-> Fork 完成后，所有配置都在你自己的仓库里，不会影响原项目。
-
----
-
-### 第二步：将项目部署到 Cloudflare
-
-1. 在 Cloudflare Dashboard，点击 **Workers & Pages** → **Create application** → **Pages**
-2. 点击 **Connect to Git** → 选择 **GitHub** → 授权 Cloudflare 访问你的账号
-3. 在仓库列表中选择 **Nginx-CF**，点击 **Begin setup**
-4. 配置页：
-   - **Project name**：随意，如 `nginx-cf`
-   - **Production branch**：`main`
-   - **Build command** 和 **Build output directory** 均留空
-5. 点击 **Save and Deploy**，等待约 1~2 分钟
-
-部署完成后会给你一个 `https://nginx-cf.xxx.pages.dev` 地址（或 `*.workers.dev`）。
-
----
-
-### 第三步：绑定 KV（可选，推荐生产环境）
-
-> 不绑定 KV 也能正常部署和使用，面板顶部会显示「KV 内存模式」。绑定后配置数据持久化，Worker 重启不丢失。
-
-1. Cloudflare Dashboard → **Workers & Pages** → **KV** → **Create a namespace**，名称随意，点击 **Add**
-2. 进入你部署的 Worker 项目 → **Settings** → **Bindings** → **Add** → **KV namespace**
-3. **Variable name** 填 `KV`，选择刚创建的命名空间，点击 **Save**
-4. Worker 会自动重部署，完成
-
----
-
-### 第四步：访问管理面板，通过向导完成配置
-
-1. 打开 `https://你的Worker地址/_admin`
-2. 首次访问会自动进入**安装向导**：
-
-   **第一步** — 设置管理员密码（至少 8 位，请妥善保存）
-
-   **第二步** — 填写上游地址（每行一个，支持多个）
-
-   **第三步** — 完成，点击「进入管理面板」
-
-3. 之后登录面板即可管理上游、触发健康检查、查看状态
-
-> ✅ **安全说明**：管理员密码加密存储在 KV 里，不会出现在代码或配置文件中。
-
----
-
-### 第五步：配置 Cron 触发器（自动健康检查）
-
-1. 进入 Worker/Pages 项目 → **Settings** → **Triggers / Cron Triggers**
-2. 点击 **Add Cron Trigger**，填入 `*/5 * * * *`
-3. 点击 **Add Trigger**
-
----
-
-### 第六步：绑定自定义域名（可选）
-
-域名需已托管在 Cloudflare：
-
-1. 进入项目 → **Settings** → **Domains & Routes** → **Add** → **Custom domain**
-2. 输入域名（如 `proxy.example.com`），点击 **Add Custom Domain**
-
----
-
-### 验证部署
-
-- 访问 `https://你的Worker地址` — 应该能看到你的后端响应
-- 访问 `https://你的Worker地址/_admin` — 应该打开管理面板
-
----
-
-## 部署方式二：Wrangler CLI（推荐有开发经验的用户）
+### 方式二：Wrangler CLI
 
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/Xiuyixx/Nginx-CF.git && cd Nginx-CF
-
-# 2. 安装依赖
+git clone https://github.com/Xiuyixx/Nginx-CF.git
+cd Nginx-CF
 npm install
-
-# 3. 登录 Cloudflare
-npx wrangler login
-
-# 4. 创建 KV（可选）
-npx wrangler kv namespace create KV
-# 把返回的 id 填入 wrangler.toml 的 kv_namespaces.id
-
-# 5. 部署
 npm run deploy
-
-# 本地开发预览
-npm run dev
 ```
 
-部署完成后同样访问 `/_admin` 用向导完成配置。
+本地检查语法：
 
----
+```bash
+npm run check
+```
 
-## 管理面板功能
+## Emby 客户端怎么填 Worker 地址
 
-| 功能 | 说明 |
-|------|------|
-| 上游列表 | 左侧侧边栏展示所有上游及健康状态 |
-| 状态表格 | 延迟、最后检查时间、健康状态 |
-| ⚡ 立即健康检查 | 手动触发一次所有上游的健康探测 |
-| ＋ 添加上游 | 弹窗输入新的上游地址 |
-| 编辑 / 删除 | 修改或移除已有上游 |
-| KV 状态标签 | 顶栏显示是否已绑定 KV，内存模式会有提示 |
+核心思路：**把 Worker 地址当成你的 Emby 服务地址**。
 
----
+例如你的 Worker 地址是：
 
-## 配置说明
+```text
+https://emby-cf.example.workers.dev
+```
 
-所有配置均可通过管理面板或 Cloudflare 控制台的 **Variables and Secrets** 设置。
+那么在 Emby 客户端 / TV / 手机 / Web 里：
+
+- 服务器地址填写 `https://emby-cf.example.workers.dev`
+- 用户名、密码仍然填写你原来的 Emby 账号
+- 客户端后续所有 API、图片、音视频流请求都会走 Worker
+
+这样用户侧只连一个入口，Worker 自动帮你挑最快、最健康的 Emby 上游。
+
+## 管理面板
+
+部署完成后访问：
+
+```text
+https://你的Worker地址/_admin
+```
+
+可完成：
+
+- 首次初始化管理员密码
+- 添加 / 编辑 / 删除 Emby 上游
+- 手动触发健康检查
+- 查看延迟、健康状态、最后检查时间
+- 查看 `/health` 返回的 Emby 状态 / 版本信息（如有）
+
+## KV 绑定说明
+
+推荐生产环境绑定 KV，这样配置不会因为 Worker 重启丢失。
+
+1. Cloudflare Dashboard → **Workers & Pages** → **KV** → 创建命名空间
+2. 进入当前 Worker → **Settings** → **Bindings** → **Add** → **KV namespace**
+3. 变量名填写：`KV`
+4. 保存后重新部署
+
+如果不绑定 KV：
+
+- 项目仍然可用
+- 但配置只保存在内存里
+- Worker 重启后需要重新配置
+
+## 环境变量说明
+
+可通过 Cloudflare Dashboard 的 Variables / Secrets 配置：
 
 | 变量名 | 默认值 | 说明 |
-|--------|--------|------|
-| `UPSTREAMS` | — | 上游地址，多个用逗号分隔（向导配置后无需此项） |
-| `ADMIN_TOKEN` | — | 管理员密码（向导配置后存储在 KV，无需此项） |
-| `USE_CF_IPS` | `false` | 是否启用 Cloudflare 优选 IP |
-| `PREFERRED_REGION` | `apac` | 优选 IP 地区：`apac` / `europe` / `us` |
-| `HEALTH_CHECK_PATH` | `/` | 健康检查探测路径 |
-| `REQUEST_TIMEOUT_MS` | `10000` | 代理请求超时（毫秒） |
-| `HEALTH_TIMEOUT_MS` | `5000` | 健康检查超时（毫秒） |
-| `CF_IP_INDEX` | — | 固定使用第几个优选 IP（留空则随机） |
+|---|---|---|
+| `UPSTREAMS` | — | Emby 上游地址，多个用逗号分隔 |
+| `ADMIN_TOKEN` | — | 管理面板密码；设置后可跳过初始化向导 |
+| `REQUEST_TIMEOUT_MS` | `10000` | API/普通请求超时，单位毫秒 |
+| `HEALTH_TIMEOUT_MS` | `5000` | 健康检查超时，单位毫秒 |
 
----
+## 健康检查逻辑
+
+按以下顺序执行：
+
+1. `GET /health`
+2. 如果不符合 Emby 健康格式，则回落 `HEAD /`
+3. 如果源站不支持 `HEAD`，再回落 `GET /`
+
+健康判定规则：
+
+- **仅 `HTTP 200` 视为健康**
+- `/health` 还要求返回 `{"Status":"Healthy"}`
+- 排序优先级：**健康 > 延迟**
+
+## 请求处理逻辑
+
+### 媒体流请求
+
+自动识别典型 Emby 流媒体路径，例如：
+
+- `/videos/*/stream*`
+- `/Items/*/Download*`
+- `/Audio/*/stream*`
+
+处理特性：
+
+- 跟随 301 / 302 重定向
+- 透传 `Range` 头
+- 不做超时截断
+- 不做重试，避免媒体流被重复消费
+
+### API / 普通请求
+
+其余请求均视为 API / 普通请求：
+
+- 默认 10 秒超时
+- 仅 5xx / 网络错误触发重试
+- 最多尝试 3 个上游
+- 请求体会预读为 `ArrayBuffer`，保证重试可复用
 
 ## 管理 API
 
-所有 API 需要 `X-Admin-Token` 请求头（向导设置的密码）。
+所有管理 API 都需要 `X-Admin-Token`。
 
 ```bash
-# 查看上游和健康状态
 curl "https://你的Worker/_admin/status" -H "X-Admin-Token: 你的密码"
 
-# 更新上游列表
 curl -X POST "https://你的Worker/_admin/upstreams" \
   -H "X-Admin-Token: 你的密码" \
   -H "Content-Type: application/json" \
-  -d '{"upstreams":["https://a.example.com","https://b.example.com"]}'
+  -d '{"upstreams":["https://emby-a.example.com","https://emby-b.example.com"]}'
 
-# 手动触发健康检查
 curl -X POST "https://你的Worker/_admin/trigger-health" \
   -H "X-Admin-Token: 你的密码"
-
-# 查询是否已完成初始化
-curl "https://你的Worker/_admin/setup-status"
 ```
 
----
+## 适用场景
 
-## 健康检查与选优逻辑
+适合这些情况：
 
-- Cron 每 5 分钟自动探测一次（`HEAD`，失败则降级 `GET`）
-- 超时默认 5 秒，可通过 `HEALTH_TIMEOUT_MS` 调整
-- 优先选择「健康且延迟最低」的上游
-- 尚无健康数据时按配置顺序轮询（不退化到只用第一个）
-- 全部不健康时 fail-open，退回第一个上游
-- 单次请求最多重试 3 个上游
-- `latency = -1` 表示探测超时
+- 多个 Emby 节点，需要统一入口
+- 不希望把真实源站直接暴露给客户端
+- 想让客户端自动享受节点故障切换
+- 需要更稳的跨区域流媒体访问体验
 
----
+## 注意事项
 
-## Cloudflare 优选 IP 说明
-
-`src/cf-ips.js` 内置亚太、欧洲、美国三组优选 IP，每次请求随机选取一个（或通过 `CF_IP_INDEX` 固定）。
-
-**适用场景**：你的上游挂在 Cloudflare，可以通过指定优选节点 IP + 保留原始 `Host` header 减少跨区绕路。
-
-**注意**：若上游 HTTPS 证书不支持直接 IP 建连，需配合自己的 SNI 方案。优选 IP 不可用时自动 fallback 到原始域名直连。
-
----
-
-## 与 Nginx-X 配合使用
-
-| 角色 | 工具 |
-|------|------|
-| 源站 / 服务器侧 Nginx 运维 | **Nginx-X** |
-| 公网入口代理 / 上游健康切换 | **Nginx-CF** |
-
-两者组合：Nginx-X 管理本机 Nginx，Nginx-CF 作为 Cloudflare 边缘层做入口代理和健康切换。
-
----
-
-## 常见问题
-
-**Q：首次访问 `/_admin` 没有出现向导，而是显示登录页？**
-A：说明 Worker 检测到 `ADMIN_TOKEN` 环境变量已设置（视为已初始化），或 KV 中已有 `setup_done` 标记。可以用已设置的 token 登录，或清空 KV 后重新访问。
-
-**Q：忘记管理员密码怎么办？**
-A：进入 Cloudflare Dashboard → Workers KV → 找到你的命名空间 → 删除 `admin_token` 和 `setup_done` 这两个 key，然后重新访问 `/_admin` 走一遍向导。
-
-**Q：没有创建 KV 可以用吗？**
-A：可以。没有 KV 时会以内存模式运行，面板顶部会显示「KV 内存模式」提示。功能完整，但 Worker 重启后配置会丢失。建议生产环境绑定 KV。
-
-**Q：部署后访问 `/_admin` 显示 `Setup requires KV binding`？**
-A：向导需要 KV 来保存初始化数据。请先完成第二、三、五步（创建并绑定 KV），或者直接在 Cloudflare 控制台 Settings → Variables 里设置 `ADMIN_TOKEN` 和 `UPSTREAMS` 跳过向导。
-
-**Q：Cron 触发器配置后没有自动检查？**
-A：Cron 触发器需要在 Cloudflare Dashboard 的 Worker 项目 → Settings → Triggers 里手动添加 `*/5 * * * *`，确认已添加。也可以在管理面板点「立即健康检查」手动触发。
+- Worker 只是反代与调度层，不替代 Emby 本身认证
+- 若你的 Emby 上游依赖内网地址，请先保证 Worker 能访问到它
+- 大部分 Emby 客户端都能直接把 Worker 地址当服务器地址使用
+- 如果你有自定义域名，建议给 Worker 绑定自己的域名再提供给用户

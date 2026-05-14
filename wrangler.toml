@@ -1,29 +1,27 @@
-# Nginx-CF - Cloudflare Worker 多上游反向代理
+# Emby-CF - Cloudflare Worker Emby 反代加速
 # 文档：https://github.com/Xiuyixx/Nginx-CF
 #
-# 部署方式：Fork 本项目 → Cloudflare Pages 连接 GitHub → 直接部署
-# 部署完成后访问 https://你的Worker地址/_admin 通过网页向导完成所有配置
+# 部署方式：Fork 本项目 → Cloudflare Workers / Pages 连接 GitHub → 直接部署
+# 部署完成后访问 https://你的Worker地址/_admin 通过网页向导完成 Emby 上游配置
 # 无需修改本文件！
 
-name = "nginxcf"
+name = "emby-cf"
 main = "src/index.js"
-compatibility_date = "2024-01-01"
+compatibility_date = "2024-06-01"
 
 # ── 环境变量 ──
-# 这里只放非敏感的默认值。
-# UPSTREAMS / ADMIN_TOKEN 请部署后通过 /_admin 向导在网页上填写。
+# 这里只放非敏感默认值。
+# UPSTREAMS / ADMIN_TOKEN 请部署后通过 /_admin 向导或 Dashboard Variables 填写。
 [vars]
-USE_CF_IPS = "false"       # 是否启用 CF 优选 IP（true/false），可在面板内修改
-PREFERRED_REGION = "apac"  # 优选 IP 地区：apac / europe / us
 
 # ── Cron 触发器（健康检查）──
-# 每 5 分钟自动探测一次上游健康状态
+# 每 5 分钟自动探测一次 Emby 上游健康状态
 # 也可以在管理面板点「⚡ 立即健康检查」手动触发
 [triggers]
 crons = ["*/5 * * * *"]
 
 # ── Workers KV（可选，推荐生产环境使用）──
-# 绑定 KV 后，配置数据（密码、上游列表）会持久化，Worker 重启不丢失。
+# 绑定 KV 后，配置数据（密码、上游列表、健康状态）会持久化，Worker 重启不丢失。
 # 不绑定 KV 也能正常运行，以内存模式工作。
 #
 # 如需绑定 KV：

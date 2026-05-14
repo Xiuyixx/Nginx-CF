@@ -9,6 +9,7 @@ import {
   setUpstreams
 } from './config.js';
 import { handleProxyRequest } from './proxy.js';
+import { classifyRequest } from './router.js';
 import { runHealthChecks } from './upstream.js';
 
 let startupChecked = false;
@@ -104,7 +105,6 @@ async function handleAdmin(request, env) {
     const setupDone = await isSetupDone(env);
 
     if (setupDone) {
-      // 无 KV 时内存跨请求不持久，同一 Worker 实例内重复提交视为幂等成功
       if (!hasKV(env)) {
         return json({ ok: true, memoryMode: true, setupDone: true });
       }
@@ -124,7 +124,6 @@ async function handleAdmin(request, env) {
       return json({ error: 'Token must be at least 8 characters' }, 400);
     }
 
-    // 上游地址可选：有则校验并写入，无则跳过
     if (upstreams !== undefined && upstreams !== null) {
       if (!Array.isArray(upstreams) || !upstreams.every(isValidUpstreamEntry)) {
         return json({ error: 'All upstream URLs must use http:// or https://' }, 400);
@@ -169,7 +168,7 @@ async function handleAdmin(request, env) {
     if (!Array.isArray(payload?.upstreams)) {
       return json({ error: 'Body must include an upstreams array' }, 400);
     }
-    // 兼容纯 URL 字符串和 {url, note} 对象两种格式
+
     if (!payload.upstreams.every(isValidUpstreamEntry)) {
       return json({ error: 'All upstream URLs must use http:// or https://' }, 400);
     }
@@ -193,7 +192,8 @@ export default {
     }
 
     try {
-      return await handleProxyRequest(request, env, ctx);
+      const route = classifyRequest(request);
+      return await handleProxyRequest(request, env, route);
     } catch (error) {
       console.error('Unhandled proxy error:', error);
       return json({ error: 'Internal Server Error', message: error.message }, 500);

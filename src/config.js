@@ -43,6 +43,7 @@ function getMemoryState(env) {
   return env.__MEMORY_STATE__;
 }
 
+// 检查是否已绑定 Workers KV
 export function hasKV(env) {
   return Boolean(env?.KV && typeof env.KV.get === 'function' && typeof env.KV.put === 'function');
 }

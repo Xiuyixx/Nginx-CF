@@ -4,7 +4,7 @@ export function getAdminHTML() {
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Nginx-CF 管理面板</title>
+  <title>Emby-CF 管理面板</title>
   <style>
     :root{color-scheme:dark;--bg:#141414;--card:#1e1e1e;--border:#2a2a2a;--text:#f5f5f5;--muted:#9ca3af;--accent:#4f8cff;--accent-soft:rgba(79,140,255,.12);--success:#22c55e;--danger:#ef4444;--warning:#f59e0b;--shadow:0 18px 40px rgba(0,0,0,.28)}
     *{box-sizing:border-box}
@@ -19,7 +19,6 @@ export function getAdminHTML() {
     input,textarea{width:100%;border:1px solid var(--border);border-radius:10px;padding:11px 12px;background:#181818;color:var(--text);outline:none;resize:vertical}
     input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
     .hidden{display:none!important}
-    /* ── Setup Wizard ── */
     .setup-shell{min-height:100vh;display:grid;place-items:center;padding:24px}
     .setup-card{width:min(100%,480px);background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:32px}
     .setup-logo{font-size:26px;font-weight:900;letter-spacing:.04em;margin-bottom:4px}
@@ -36,12 +35,10 @@ export function getAdminHTML() {
     .success-box{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:12px;padding:16px;text-align:center;margin-bottom:20px}
     .success-icon{font-size:32px;margin-bottom:8px}
     .url-box{background:#181818;border:1px solid var(--border);border-radius:10px;padding:12px;font-family:monospace;font-size:13px;word-break:break-all;margin:8px 0}
-    /* ── Login ── */
     .login-shell{min-height:100vh;display:grid;place-items:center;padding:24px}
     .login-card{width:min(100%,420px);background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:28px}
     .login-title{font-size:24px;font-weight:800;margin-bottom:4px}
     .login-sub{color:var(--muted);margin-bottom:20px}
-    /* ── App ── */
     .app-shell{display:flex;flex-direction:column;min-height:100vh}
     .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 24px;border-bottom:1px solid var(--border);background:rgba(20,20,20,.92);backdrop-filter:blur(12px);position:sticky;top:0;z-index:20}
     .brand{font-size:20px;font-weight:800;letter-spacing:.04em}
@@ -57,6 +54,7 @@ export function getAdminHTML() {
     .sidebar-list{display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 220px);overflow:auto}
     .sidebar-item{width:100%;padding:12px;border-radius:14px;background:#181818;border:1px solid transparent;text-align:left;cursor:pointer}
     .sidebar-item:hover,.sidebar-item.active{border-color:var(--accent);background:rgba(79,140,255,.08)}
+    .sidebar-item-row{display:flex;align-items:center;gap:8px}
     .dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;background:var(--danger)}
     .dot.healthy{background:var(--success)}
     .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -84,23 +82,19 @@ export function getAdminHTML() {
     .muted{color:var(--muted)}
     .text-right{text-align:right}
     @media(max-width:900px){.layout{grid-template-columns:1fr;padding:16px}.sidebar-list{flex-direction:row;overflow:auto;max-height:none}.sidebar-item{min-width:200px}}
-    @media(max-width:640px){.topbar{margin:12px 12px 0;padding:14px;border-radius:16px}.layout{padding:12px;gap:12px}.table-wrap{overflow-x:auto}table{min-width:640px}}
+    @media(max-width:640px){.topbar{margin:12px 12px 0;padding:14px;border-radius:16px}.layout{padding:12px;gap:12px}.table-wrap{overflow-x:auto}table{min-width:780px}}
   </style>
 </head>
 <body>
-
-<!-- ══════════════ SETUP WIZARD ══════════════ -->
 <section id="setupView" class="setup-shell hidden">
   <div class="setup-card">
-    <div class="setup-logo">🚀 Nginx-CF</div>
-    <div class="setup-sub">欢迎！首次使用请完成初始化配置</div>
+    <div class="setup-logo">🎬 Emby-CF</div>
+    <div class="setup-sub">欢迎！先完成 Emby 反代加速初始化</div>
     <div class="step-indicator">
       <div class="step-dot active" id="dot0"></div>
       <div class="step-dot" id="dot1"></div>
       <div class="step-dot" id="dot2"></div>
     </div>
-
-    <!-- Step 0: Set token -->
     <div id="step0">
       <div class="step-title">第一步：设置管理员密码</div>
       <div class="step-desc">这是你登录管理面板的密码，请设置一个强密码并妥善保存，之后无法在面板内查看。</div>
@@ -109,14 +103,12 @@ export function getAdminHTML() {
       <div class="error-msg" id="s0err"></div>
       <button class="primary" style="width:100%" onclick="goStep1()">下一步 →</button>
     </div>
-
-    <!-- Step 1: Upstreams -->
     <div id="step1" class="hidden">
-      <div class="step-title">第二步：填写上游地址</div>
-      <div class="step-desc">填写你的后端服务器地址，每行一个，支持多个地址自动健康选优。<br><span style="color:var(--muted)">也可以跳过，进入面板后再添加。</span></div>
+      <div class="step-title">第二步：填写 Emby 上游</div>
+      <div class="step-desc">填写你的 Emby 服务器地址，每行一个。Worker 会自动健康检查、选优和故障转移。<br><span style="color:var(--muted)">也可以跳过，进入面板后再添加。</span></div>
       <div class="field">
-        <label>上游地址（每行一个，可选）</label>
-        <textarea id="s1upstreams" rows="4" placeholder="https://your-server.example.com&#10;https://backup.example.com"></textarea>
+        <label>Emby 上游地址（每行一个，可选）</label>
+        <textarea id="s1upstreams" rows="4" placeholder="https://emby-a.example.com&#10;https://emby-b.example.com"></textarea>
       </div>
       <div class="error-msg" id="s1err"></div>
       <div style="display:flex;gap:8px">
@@ -125,39 +117,33 @@ export function getAdminHTML() {
         <button class="primary" style="flex:2" onclick="submitSetup(true)">完成初始化</button>
       </div>
     </div>
-
-    <!-- Step 2: Done -->
     <div id="step2" class="hidden">
       <div class="success-box">
         <div class="success-icon">✅</div>
         <div style="font-size:16px;font-weight:700;margin-bottom:6px">初始化完成！</div>
-        <div class="muted" style="font-size:13px">Nginx-CF 已就绪，可以开始使用了。</div>
+        <div class="muted" style="font-size:13px">Emby-CF 已就绪，把 Worker 地址填到 Emby 客户端即可。</div>
       </div>
       <div id="memoryModeWarn" class="hidden" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px;color:#fcd34d">
         ⚠️ 当前运行在内存模式（未绑定 KV），配置将在 Worker 重启后丢失。如需持久化，请在 Cloudflare Dashboard → Worker → Settings → Bindings 里绑定 KV 命名空间。
       </div>
-      <div class="step-desc">你的 Worker 地址：</div>
+      <div class="step-desc">你的 Worker 管理地址：</div>
       <div class="url-box" id="workerUrl"></div>
       <button class="primary" style="width:100%;margin-top:8px" onclick="enterPanel()">进入管理面板 →</button>
     </div>
   </div>
 </section>
-
-<!-- ══════════════ LOGIN ══════════════ -->
 <section id="loginView" class="login-shell hidden">
   <div class="login-card">
-    <div class="login-title">Nginx-CF</div>
-    <div class="login-sub">输入管理员密码进入管理面板</div>
+    <div class="login-title">Emby-CF</div>
+    <div class="login-sub">输入管理员密码进入 Emby 反代加速面板</div>
     <div class="field" style="margin-top:16px"><label>管理员密码</label><input id="tokenInput" type="password" placeholder="X-Admin-Token" autocomplete="off"/></div>
     <div class="error-msg" id="loginErr"></div>
     <button class="primary" style="width:100%;margin-top:4px" onclick="doLogin()">登录</button>
   </div>
 </section>
-
-<!-- ══════════════ APP ══════════════ -->
 <section id="appView" class="app-shell hidden">
   <header class="topbar">
-    <div class="brand">Nginx-CF</div>
+    <div class="brand">Emby-CF</div>
     <div class="topbar-right">
       <span class="tag" id="kvTag">KV</span>
       <span class="tag" id="timeTag"></span>
@@ -167,7 +153,7 @@ export function getAdminHTML() {
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar-header">
-        <div class="sidebar-title">上游列表</div>
+        <div class="sidebar-title">Emby 上游</div>
         <span id="sidebarCount" class="muted">0</span>
       </div>
       <div id="sidebarList" class="sidebar-list"></div>
@@ -175,11 +161,11 @@ export function getAdminHTML() {
     <main class="main-panel">
       <div class="toolbar">
         <div>
-          <div class="main-title">上游管理</div>
-          <div class="muted">查看状态、增删上游、触发健康检查</div>
+          <div class="main-title">Emby 反代加速</div>
+          <div class="muted">查看节点健康状态、版本信息、增删上游、手动触发健康检查</div>
         </div>
         <div class="toolbar-right">
-          <div class="search-wrap"><input id="searchInput" type="search" placeholder="搜索 URL..." oninput="renderTable()"/></div>
+          <div class="search-wrap"><input id="searchInput" type="search" placeholder="搜索 URL / 备注..." oninput="renderTable()"/></div>
           <button id="refreshBtn" onclick="doRefresh(this)">↻ 刷新</button>
           <button class="success" id="healthBtn" onclick="triggerHealth()">⚡ 立即健康检查</button>
           <button class="primary" onclick="openAddModal()">＋ 添加上游</button>
@@ -187,7 +173,7 @@ export function getAdminHTML() {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>URL</th><th>备注</th><th>状态</th><th>延迟</th><th>最后检查</th><th class="text-right">操作</th></tr></thead>
+          <thead><tr><th>URL</th><th>备注</th><th>状态</th><th>延迟</th><th>版本</th><th>检查方式</th><th>最后检查</th><th class="text-right">操作</th></tr></thead>
           <tbody id="tableBody"></tbody>
         </table>
         <div id="emptyState" class="empty-state hidden">暂无上游，点击「添加上游」开始配置。</div>
@@ -201,28 +187,24 @@ export function getAdminHTML() {
       </div>
     </main>
   </div>
-  <footer class="footer">Nginx-CF v1.1.0 · <span id="nowLabel"></span></footer>
+  <footer class="footer">Emby-CF v2.0.0 · <span id="nowLabel"></span></footer>
 </section>
-
-  <!-- Modal -->
-  <div id="modal" class="modal hidden">
-    <div class="modal-card">
-      <div class="modal-header">
-        <div class="modal-title" id="modalTitle">添加上游</div>
-        <button onclick="closeModal()">✕</button>
-      </div>
-      <div class="field"><label>URL 地址</label><input id="modalUrl" type="url" placeholder="https://your-server.example.com"/></div>
-      <div class="field"><label>备注（可选）</label><input id="modalNote" type="text" placeholder="例如：主站点 / 备用节点"/></div>
-      <div class="error-msg" id="modalErr"></div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button style="flex:1" onclick="closeModal()">取消</button>
-        <button class="primary" style="flex:2" onclick="submitModal()">确认</button>
-      </div>
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">添加上游</div>
+      <button onclick="closeModal()">✕</button>
+    </div>
+    <div class="field"><label>URL 地址</label><input id="modalUrl" type="url" placeholder="https://emby.example.com"/></div>
+    <div class="field"><label>备注（可选）</label><input id="modalNote" type="text" placeholder="例如：主站点 / 家宽 / 香港节点"/></div>
+    <div class="error-msg" id="modalErr"></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button style="flex:1" onclick="closeModal()">取消</button>
+      <button class="primary" style="flex:2" onclick="submitModal()">确认</button>
     </div>
   </div>
-
+</div>
 <script>
-// ── State ──
 let TOKEN = '';
 let allUpstreams = [];
 let allHealth = [];
@@ -230,13 +212,12 @@ let page = 1;
 const PAGE_SIZE = 10;
 let editingIndex = -1;
 
-// ── Boot ──
 (async function boot() {
   const res = await fetch('/_admin/setup-status').catch(() => null);
   if (!res || !res.ok) { show('loginView'); return; }
   const data = await res.json();
   if (!data.setupDone) { show('setupView'); return; }
-  const saved = sessionStorage.getItem('ngx_token');
+  const saved = sessionStorage.getItem('emby_cf_token');
   if (saved) { TOKEN = saved; show('appView'); await loadStatus(); }
   else show('loginView');
 })();
@@ -246,7 +227,6 @@ function show(id) {
   document.getElementById(id).classList.remove('hidden');
 }
 
-// ── Setup Wizard ──
 let s0token = '';
 function gotoStep(n) {
   [0,1,2].forEach(i => {
@@ -267,9 +247,9 @@ function goStep1() {
 }
 async function submitSetup(requireUpstreams) {
   const raw = document.getElementById('s1upstreams').value;
-  const upstreams = raw.split('\\n').map(s => s.trim()).filter(Boolean);
+  const upstreams = raw.split('\n').map(s => s.trim()).filter(Boolean);
   const err = document.getElementById('s1err');
-  if (requireUpstreams && upstreams.length === 0) { err.textContent = '请至少填写一个上游地址'; return; }
+  if (requireUpstreams && upstreams.length === 0) { err.textContent = '请至少填写一个 Emby 上游地址'; return; }
   document.querySelectorAll('#step1 button').forEach(b => b.disabled = true);
   err.textContent = '提交中…';
   const res = await fetch('/_admin/setup', {
@@ -278,18 +258,15 @@ async function submitSetup(requireUpstreams) {
     body: JSON.stringify({ token: s0token, upstreams })
   });
   const data = await res.json();
-  // 无 KV 时同一 Worker 实例内存已标记完成，幂等视为成功
   if (!res.ok && res.status !== 409) { document.querySelectorAll('#step1 button').forEach(b => b.disabled = false); err.textContent = data.error || '初始化失败'; return; }
   TOKEN = s0token;
-  sessionStorage.setItem('ngx_token', TOKEN);
+  sessionStorage.setItem('emby_cf_token', TOKEN);
   document.getElementById('workerUrl').textContent = location.origin + '/_admin';
-  // 无 KV 时显示内存模式提醒
   if (data.memoryMode) document.getElementById('memoryModeWarn').classList.remove('hidden');
   gotoStep(2);
 }
 function enterPanel() { show('appView'); loadStatus(); }
 
-// ── Login ──
 async function doLogin() {
   const t = document.getElementById('tokenInput').value.trim();
   const err = document.getElementById('loginErr');
@@ -299,7 +276,7 @@ async function doLogin() {
   if (res.status === 401) { err.textContent = '密码错误'; return; }
   if (!res.ok) { err.textContent = '服务器错误，请稍后重试'; return; }
   TOKEN = t;
-  sessionStorage.setItem('ngx_token', TOKEN);
+  sessionStorage.setItem('emby_cf_token', TOKEN);
   err.textContent = '';
   show('appView');
   await applyStatus(await res.json());
@@ -307,9 +284,8 @@ async function doLogin() {
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !document.getElementById('loginView').classList.contains('hidden')) doLogin();
 });
-function doLogout() { TOKEN = ''; sessionStorage.removeItem('ngx_token'); show('loginView'); }
+function doLogout() { TOKEN = ''; sessionStorage.removeItem('emby_cf_token'); show('loginView'); }
 
-// ── App ──
 async function doRefresh(btn) {
   if (btn) { btn.disabled = true; btn.textContent = '刷新中…'; }
   await loadStatus();
@@ -374,18 +350,28 @@ function isValidUpstreamUrl(value) {
   }
 }
 
+function getHealthSummary(record) {
+  if (!record) return '暂无数据';
+  if (record.healthy) {
+    return record.healthStatus ? '健康 · ' + record.healthStatus : '健康';
+  }
+  if (record.status) {
+    return '异常 · HTTP ' + record.status;
+  }
+  return record.error ? '异常 · ' + record.error : '异常';
+}
+
 function renderSidebar() {
   const list = document.getElementById('sidebarList');
   document.getElementById('sidebarCount').textContent = allUpstreams.length;
   list.innerHTML = allUpstreams.map((entry, i) => {
     const { url, note } = typeof entry === 'object' ? entry : { url: entry, note: '' };
-    const h = getHealthRecord(url);
-    const healthy = h?.healthy;
-    const latency = h ? (h.latency >= 0 ? h.latency + 'ms' : '超时') : '未知';
+    const record = getHealthRecord(url);
+    const latency = record ? (record.latency >= 0 ? record.latency + 'ms' : '超时') : '未知';
     const label = note || url;
     return \`<div class="sidebar-item" onclick="highlightRow(\${i})">
-      <div class="sidebar-item-row"><span class="dot \${healthy ? 'healthy' : ''}"></span><span class="truncate" title="\${escapeHTML(url)}">\${escapeHTML(label)}</span></div>
-      <div class="sidebar-meta">\${healthy === undefined ? '暂无数据' : (healthy ? '健康' : '不健康')} · \${escapeHTML(latency)}</div>
+      <div class="sidebar-item-row"><span class="dot \${record?.healthy ? 'healthy' : ''}"></span><span class="truncate" title="\${escapeHTML(url)}">\${escapeHTML(label)}</span></div>
+      <div class="sidebar-meta">\${escapeHTML(getHealthSummary(record))} · \${escapeHTML(latency)}</div>
     </div>\`;
   }).join('');
 }
@@ -405,16 +391,20 @@ function renderTable() {
   else {
     empty.classList.add('hidden');
     tbody.innerHTML = slice.map(({ url, note, i }) => {
-      const h = getHealthRecord(url);
-      const healthy = h?.healthy;
-      const latency = h ? (h.latency >= 0 ? h.latency + 'ms' : '超时') : '—';
-      const lastCheck = h?.lastCheck ? new Date(h.lastCheck).toLocaleString('zh-CN') : '—';
+      const record = getHealthRecord(url);
+      const healthy = record?.healthy;
+      const latency = record ? (record.latency >= 0 ? record.latency + 'ms' : '超时') : '—';
+      const lastCheck = record?.lastCheck ? new Date(record.lastCheck).toLocaleString('zh-CN') : '—';
       const badge = healthy === undefined ? '' : \`<span class="badge \${healthy ? 'healthy' : 'unhealthy'}">\${healthy ? '✓ 健康' : '✗ 不健康'}</span>\`;
+      const version = record?.version || '—';
+      const source = record?.source || '—';
       return \`<tr id="row-\${i}">
-        <td class="truncate" style="max-width:200px" title="\${escapeHTML(url)}">\${escapeHTML(url)}</td>
-        <td class="muted truncate" style="max-width:100px" title="\${escapeHTML(note)}">\${escapeHTML(note || '—')}</td>
+        <td class="truncate" style="max-width:220px" title="\${escapeHTML(url)}">\${escapeHTML(url)}</td>
+        <td class="muted truncate" style="max-width:120px" title="\${escapeHTML(note)}">\${escapeHTML(note || '—')}</td>
         <td>\${badge || '<span class="muted">—</span>'}</td>
         <td>\${escapeHTML(latency)}</td>
+        <td>\${escapeHTML(version)}</td>
+        <td>\${escapeHTML(source)}</td>
         <td>\${escapeHTML(lastCheck)}</td>
         <td class="text-right" style="white-space:nowrap"><button onclick="openEditModal(\${i})">编辑</button> <button class="danger" onclick="removeUpstream(\${i})">删除</button></td>
       </tr>\`;
@@ -432,7 +422,6 @@ function highlightRow(i) {
 }
 function changePage(d) { page += d; renderTable(); }
 
-// ── Modal ──
 function openAddModal() {
   editingIndex = -1;
   document.getElementById('modalTitle').textContent = '添加上游';
@@ -484,7 +473,6 @@ async function removeUpstream(i) {
   renderTable();
 }
 
-// ── Helpers ──
 async function authFetch(url, opts = {}) {
   opts.headers = Object.assign({}, opts.headers, { 'X-Admin-Token': TOKEN });
   const res = await fetch(url, opts).catch(() => null);

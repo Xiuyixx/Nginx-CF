@@ -1,4 +1,3 @@
-import { getBestIPs, getResolveOverride } from './cf-ips.js';
 import { chooseUpstreams } from './upstream.js';
 
 const HOP_BY_HOP_HEADERS = [
@@ -35,12 +34,12 @@ function copyHeaders(headers, blocked = []) {
   return output;
 }
 
-function buildForwardedHeaders(request, upstream, originalHost) {
+function buildForwardedHeaders(request, upstream) {
   const headers = copyHeaders(request.headers, HOP_BY_HOP_HEADERS);
   const clientUrl = new URL(request.url);
   const upstreamUrl = new URL(upstream);
 
-  headers.set('Host', originalHost || upstreamUrl.host);
+  headers.set('Host', upstreamUrl.host);
   headers.set('X-Forwarded-Host', clientUrl.host);
   headers.set('X-Forwarded-Proto', clientUrl.protocol.replace(':', ''));
   headers.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '0.0.0.0');
@@ -85,107 +84,50 @@ function getRequestTimeoutMs(env) {
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_REQUEST_TIMEOUT_MS;
 }
 
-function getPreferredIp(env) {
-  if (String(env.USE_CF_IPS || '').toLowerCase() !== 'true') {
-    return null;
-  }
-
-  const ips = getBestIPs(env.PREFERRED_REGION || 'apac');
-  if (!Array.isArray(ips) || ips.length === 0) {
-    return null;
-  }
-
-  const fixedIndex = Number(env.CF_IP_INDEX);
-  if (Number.isInteger(fixedIndex) && fixedIndex >= 0) {
-    return ips[fixedIndex % ips.length] || null;
-  }
-
-  return ips[Math.floor(Math.random() * ips.length)] || null;
-}
-
 function cloneRequestBody(bodyBuffer) {
   return bodyBuffer ? bodyBuffer.slice(0) : undefined;
 }
 
-async function proxyToUpstream(request, upstream, env, bodyBuffer) {
-  const originalUpstreamUrl = createTargetUrl(request, upstream);
-  const preferredIp = getPreferredIp(env);
-  const timeoutMs = getRequestTimeoutMs(env);
+async function fetchUpstream(request, upstream, init, timeoutMs) {
+  const targetUrl = createTargetUrl(request, upstream).toString();
+  const responsePromise = fetch(targetUrl, init);
 
-  const directInit = {
-    method: request.method,
-    headers: buildForwardedHeaders(request, upstream),
-    redirect: 'manual'
-  };
-
-  if (request.method !== 'GET' && request.method !== 'HEAD' && bodyBuffer) {
-    directInit.body = cloneRequestBody(bodyBuffer);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return responsePromise;
   }
 
-  if (!preferredIp) {
-    return withTimeout(fetch(originalUpstreamUrl.toString(), directInit), timeoutMs);
-  }
-
-  const override = getResolveOverride(originalUpstreamUrl.toString(), preferredIp);
-  const preferredInit = {
-    method: request.method,
-    headers: buildForwardedHeaders(request, upstream, override.originalHost),
-    redirect: 'manual'
-  };
-
-  if (request.method !== 'GET' && request.method !== 'HEAD' && bodyBuffer) {
-    preferredInit.body = cloneRequestBody(bodyBuffer);
-  }
-
-  try {
-    return await withTimeout(fetch(override.url, preferredInit), timeoutMs);
-  } catch (error) {
-    console.warn(`Preferred IP ${preferredIp} failed, fallback to direct upstream ${upstream}`);
-    return withTimeout(fetch(originalUpstreamUrl.toString(), directInit), timeoutMs);
-  }
+  return withTimeout(responsePromise, timeoutMs);
 }
 
-export async function handleProxyRequest(request, env) {
-  const orderedUpstreams = await chooseUpstreams(env);
-  const attempts = orderedUpstreams.slice(0, MAX_RETRIES);
-  const errors = [];
-  const bodyBuffer = request.method !== 'GET' && request.method !== 'HEAD' ? await request.arrayBuffer() : null;
+function createProxyInit(request, upstream, bodyBuffer, redirectMode, allowStreamingBody = false) {
+  const init = {
+    method: request.method,
+    headers: buildForwardedHeaders(request, upstream),
+    redirect: redirectMode
+  };
 
-  for (const upstream of attempts) {
-    try {
-      const response = await proxyToUpstream(request, upstream, env, bodyBuffer);
-
-      if (shouldRetry(response, null)) {
-        errors.push({ upstream, status: response.status });
-        continue;
-      }
-
-      const headers = copyHeaders(response.headers, RESPONSE_BLOCKED_HEADERS);
-
-      if (isWebSocketRequest(request)) {
-        if (response.status === 101 && response.webSocket) {
-          return response;
-        }
-
-        errors.push({ upstream, status: response.status, error: 'WebSocket upgrade failed' });
-        continue;
-      }
-
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers
-      });
-    } catch (error) {
-      console.error(`Proxy attempt failed for ${upstream}:`, error);
-      errors.push({ upstream, error: error.message });
-
-      if (!shouldRetry({ status: 0 }, error)) {
-        break;
-      }
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    if (bodyBuffer) {
+      init.body = cloneRequestBody(bodyBuffer);
+    } else if (allowStreamingBody && request.body) {
+      init.body = request.body;
     }
   }
 
+  return init;
+}
+
+function createResponse(response) {
+  const headers = copyHeaders(response.headers, RESPONSE_BLOCKED_HEADERS);
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function errorResponse(errors) {
   return new Response(
     JSON.stringify(
       {
@@ -202,4 +144,70 @@ export async function handleProxyRequest(request, env) {
       }
     }
   );
+}
+
+async function handleMediaProxyRequest(request, env, orderedUpstreams) {
+  const upstream = orderedUpstreams[0];
+
+  if (!upstream) {
+    throw new Error('No upstreams configured');
+  }
+
+  const init = createProxyInit(request, upstream, null, 'follow', true);
+  const response = await fetchUpstream(request, upstream, init, 0);
+
+  if (isWebSocketRequest(request)) {
+    if (response.status === 101 && response.webSocket) {
+      return response;
+    }
+
+    return errorResponse([{ upstream, status: response.status, error: 'WebSocket upgrade failed' }]);
+  }
+
+  return createResponse(response);
+}
+
+async function handleApiProxyRequest(request, env, orderedUpstreams) {
+  const attempts = orderedUpstreams.slice(0, MAX_RETRIES);
+  const errors = [];
+  const bodyBuffer = request.method !== 'GET' && request.method !== 'HEAD' ? await request.arrayBuffer() : null;
+  const timeoutMs = getRequestTimeoutMs(env);
+
+  for (const upstream of attempts) {
+    try {
+      const init = createProxyInit(request, upstream, bodyBuffer, 'follow');
+      const response = await fetchUpstream(request, upstream, init, timeoutMs);
+
+      if (shouldRetry(response, null)) {
+        errors.push({ upstream, status: response.status });
+        continue;
+      }
+
+      if (isWebSocketRequest(request)) {
+        if (response.status === 101 && response.webSocket) {
+          return response;
+        }
+
+        errors.push({ upstream, status: response.status, error: 'WebSocket upgrade failed' });
+        continue;
+      }
+
+      return createResponse(response);
+    } catch (error) {
+      console.error(`Proxy attempt failed for ${upstream}:`, error);
+      errors.push({ upstream, error: error.message });
+    }
+  }
+
+  return errorResponse(errors);
+}
+
+export async function handleProxyRequest(request, env, route) {
+  const orderedUpstreams = await chooseUpstreams(env);
+
+  if (route?.type === 'media') {
+    return handleMediaProxyRequest(request, env, orderedUpstreams);
+  }
+
+  return handleApiProxyRequest(request, env, orderedUpstreams);
 }

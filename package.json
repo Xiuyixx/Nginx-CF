@@ -1,6 +1,7 @@
 {
-  "name": "nginx-cf",
-  "version": "1.1.0",
+  "name": "emby-cf",
+  "version": "2.0.0",
+  "description": "Emby 反代加速 · Cloudflare Worker",
   "private": true,
   "type": "module",
   "scripts": {
