@@ -57,34 +57,7 @@ Nginx-CF/
 
 ---
 
-### 第二步：创建 Workers KV 命名空间
-
-> **KV 是可选的**。不创建 KV 也能正常运行，但数据存在内存里，Worker 重启后会丢失。建议创建。
-
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
-2. 左侧点击 **Workers & Pages** → **KV**
-3. 右上角点击 **Create a namespace**，名称填 `KV`，点击 **Add**
-4. 创建后复制旁边的 **ID**（形如 `abc123...`）
-
----
-
-### 第三步：把 KV 的 ID 填入仓库
-
-1. 打开你 Fork 的仓库，点击 **`wrangler.toml`** 文件
-2. 点击右上角铅笔（✏️）编辑
-3. 找到这一行，替换 `YOUR_KV_NAMESPACE_ID`：
-
-```toml
-id = "YOUR_KV_NAMESPACE_ID"   # ← 替换为你第二步复制的 ID
-```
-
-4. 滚动到底部，点击 **Commit changes** 保存
-
-> 如果你不打算用 KV，可以跳过第二、三步，直接进入第四步。
-
----
-
-### 第四步：将项目部署到 Cloudflare
+### 第二步：将项目部署到 Cloudflare
 
 1. 在 Cloudflare Dashboard，点击 **Workers & Pages** → **Create application** → **Pages**
 2. 点击 **Connect to Git** → 选择 **GitHub** → 授权 Cloudflare 访问你的账号
@@ -99,16 +72,18 @@ id = "YOUR_KV_NAMESPACE_ID"   # ← 替换为你第二步复制的 ID
 
 ---
 
-### 第五步：绑定 KV（如果你创建了 KV）
+### 第三步：绑定 KV（可选，推荐生产环境）
 
-1. 进入刚部署的项目 → **Settings** → **Bindings**
-2. 点击 **Add** → 选择 **KV namespace**
-3. **Variable name** 填 `KV`，**KV namespace** 选你创建的命名空间
-4. 点击 **Save**，等待重新部署
+> 不绑定 KV 也能正常部署和使用，面板顶部会显示「KV 内存模式」。绑定后配置数据持久化，Worker 重启不丢失。
+
+1. Cloudflare Dashboard → **Workers & Pages** → **KV** → **Create a namespace**，名称随意，点击 **Add**
+2. 进入你部署的 Worker 项目 → **Settings** → **Bindings** → **Add** → **KV namespace**
+3. **Variable name** 填 `KV`，选择刚创建的命名空间，点击 **Save**
+4. Worker 会自动重部署，完成
 
 ---
 
-### 第六步：访问管理面板，通过向导完成配置
+### 第四步：访问管理面板，通过向导完成配置
 
 1. 打开 `https://你的Worker地址/_admin`
 2. 首次访问会自动进入**安装向导**：
@@ -125,7 +100,7 @@ id = "YOUR_KV_NAMESPACE_ID"   # ← 替换为你第二步复制的 ID
 
 ---
 
-### 第七步：配置 Cron 触发器（自动健康检查）
+### 第五步：配置 Cron 触发器（自动健康检查）
 
 1. 进入 Worker/Pages 项目 → **Settings** → **Triggers / Cron Triggers**
 2. 点击 **Add Cron Trigger**，填入 `*/5 * * * *`
@@ -133,7 +108,7 @@ id = "YOUR_KV_NAMESPACE_ID"   # ← 替换为你第二步复制的 ID
 
 ---
 
-### 第八步：绑定自定义域名（可选）
+### 第六步：绑定自定义域名（可选）
 
 域名需已托管在 Cloudflare：
 
