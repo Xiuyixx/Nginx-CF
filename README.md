@@ -95,12 +95,41 @@ https://你的Worker地址/_admin
 
 ## KV 绑定说明
 
-推荐生产环境绑定 KV，这样配置不会因为 Worker 重启丢失。
+推荐生产环境绑定 Workers KV，这样管理员密码、Emby 上游、健康检查结果、优选 IP 都会持久保存，不会因为 Worker 重启丢失。
 
-1. Cloudflare Dashboard → **Workers & Pages** → **KV** → 创建命名空间
-2. 进入当前 Worker → **Settings** → **Bindings** → **Add** → **KV namespace**
-3. 变量名填写：`KV`
-4. 保存后重新部署
+> Cloudflare 新版控制台里，KV 入口通常在：**构建 → 存储和数据库 → Workers KV**。
+
+### 第一步：创建 KV 命名空间
+
+1. 打开 Cloudflare Dashboard
+2. 左侧进入 **构建 → 存储和数据库 → Workers KV**
+3. 点击 **创建命名空间 / Create namespace**
+4. 名称随便填，例如：`EMBY_CF_KV`
+5. 创建完成后进入该 KV，可以看到「KV 对 / 设置」页面
+
+注意：
+
+- **不需要手动在 KV 里添加条目**
+- 截图里的「密钥 / 值 / 添加条目」可以留空
+- EMBY-CF 会自动写入需要的键值
+
+### 第二步：把 KV 绑定到 Worker
+
+1. 左侧进入 **构建 → 计算 → Workers 和 Pages**
+2. 打开你的 EMBY-CF Worker / Pages 项目
+3. 进入 **设置 / Settings**
+4. 找到 **绑定 / Bindings**
+5. 点击 **添加绑定 / Add binding**
+6. 类型选择：**KV namespace / KV 命名空间**
+7. 变量名必须填写：`KV`
+8. KV 命名空间选择第一步创建的 `EMBY_CF_KV`
+9. 保存并重新部署
+
+关键点：
+
+- 变量名必须是大写 `KV`
+- KV 命名空间名称可以随便起
+- 绑定后重新部署，管理面板右上角应显示 `KV ✓`
 
 如果不绑定 KV：
 
