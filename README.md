@@ -30,120 +30,169 @@ Nginx-CF/
 
 ---
 
-## 部署方式一：Cloudflare 控制台（零命令行，推荐新手）
+## 部署方式一：Cloudflare 控制台（推荐新手，全程不需要命令行）
 
-### 前提条件
+这套流程完全在浏览器里完成，不需要安装任何工具，跟着步骤一步一步做就行。
 
-- 拥有 [Cloudflare 账号](https://dash.cloudflare.com/sign-up)（免费即可）
-- 准备好上游服务器地址（例如 `https://your-server.example.com`）
+### 准备工作
 
----
+在开始之前，你需要准备好以下内容：
 
-### 第一步：创建 Workers KV 命名空间
-
-1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
-2. 左侧菜单依次进入：**Workers & Pages** → **KV**
-3. 点击右上角 **Create a namespace**
-4. 命名空间名称填写 `KV`，点击 **Add**
-5. 创建成功后，记录下该命名空间的 **ID**（形如 `abc123def456...`），后续会用到
+1. **Cloudflare 账号**：没有的话去 [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) 免费注册一个，填邮箱和密码即可，不需要绑定域名
+2. **GitHub 账号**：用来 Fork 本项目。没有的话去 [github.com](https://github.com) 免费注册
+3. **上游服务器地址**：也就是你真正的后端服务地址，例如 `https://your-server.example.com`
 
 ---
 
-### 第二步：创建 Worker
+### 第一步：Fork 本项目到你的 GitHub
 
-1. 左侧菜单进入：**Workers & Pages** → **Overview**
-2. 点击 **Create application** → 选择 **Create Worker**
-3. 为 Worker 起一个名字（例如 `nginx-cf`），点击 **Deploy**
-4. 部署完成后，点击 **Edit code** 进入在线编辑器
+Fork 的意思是把这个项目复制一份到你自己的 GitHub 账号下，这样 Cloudflare 才能读取你的代码来部署。
 
----
+1. 打开本项目页面：[github.com/Xiuyixx/Nginx-CF](https://github.com/Xiuyixx/Nginx-CF)
+2. 点击页面右上角的 **Fork** 按钮
+3. 在弹出的页面中，直接点击 **Create fork**
+4. 稍等几秒，你的 GitHub 账号下就会出现一个同名的仓库副本，例如 `你的用户名/Nginx-CF`
 
-### 第三步：上传代码
-
-在在线编辑器中，需要将本项目的源码文件逐一创建：
-
-> **提示**：编辑器左侧文件树支持新建文件和文件夹。
-
-1. 创建 `src/` 文件夹（点击左侧 `+` 按钮 → New folder → 输入 `src`）
-2. 在 `src/` 下依次创建以下文件并粘贴对应代码：
-   - `index.js`
-   - `proxy.js`
-   - `upstream.js`
-   - `config.js`
-   - `cf-ips.js`
-3. 将根目录的 `worker.js`（或默认入口文件）内容替换为 `src/index.js` 的内容
-
-> **更简单的方式**：直接将本仓库 clone 到本地后，使用 Wrangler CLI 一键部署（见下文「部署方式二」）。
+> Fork 完成后，后续所有配置修改都在你自己的仓库里进行，不会影响原项目。
 
 ---
 
-### 第四步：绑定 KV 命名空间
+### 第二步：修改配置文件
 
-1. 回到 Worker 详情页，点击顶部 **Settings** 标签
-2. 找到 **Variables** → **KV Namespace Bindings**
-3. 点击 **Add binding**：
-   - **Variable name**：填 `KV`
-   - **KV namespace**：选择第一步创建的 `KV` 命名空间
-4. 点击 **Save**
+在部署之前，需要先在你 Fork 的仓库里填好配置。
 
----
+1. 打开你 Fork 的仓库（`github.com/你的用户名/Nginx-CF`）
+2. 点击仓库文件列表中的 **`wrangler.toml`** 文件
+3. 点击右上角的铅笔图标（✏️）进入编辑模式
+4. 找到 `[vars]` 部分，修改以下内容：
 
-### 第五步：配置环境变量
-
-在同一个 **Settings → Variables → Environment Variables** 区域，添加以下变量：
-
-| 变量名             | 示例值                                          | 说明                                 |
-| ---------------- | ---------------------------------------------- | ------------------------------------ |
-| `UPSTREAMS`      | `https://a.example.com,https://b.example.com`  | 默认上游列表，多个用英文逗号分隔            |
-| `ADMIN_TOKEN`    | `your-secret-token`                            | 管理 API 鉴权 token，请修改为随机强密码    |
-| `USE_CF_IPS`     | `false`                                        | 是否启用 Cloudflare 优选 IP（`true/false`） |
-| `PREFERRED_REGION` | `apac`                                       | 优选 IP 地区：`apac` / `europe` / `us` |
-
-> ⚠️ **安全提示**：`ADMIN_TOKEN` 请使用随机生成的长字符串，不要使用 `change-me` 等默认值。
-
-添加完成后点击 **Save and deploy**。
-
----
-
-### 第六步：配置 Cron 触发器（健康检查）
-
-1. 在 Worker 详情页，点击 **Triggers** 标签
-2. 找到 **Cron Triggers** → 点击 **Add Cron Trigger**
-3. 填写 Cron 表达式：`*/5 * * * *`（每 5 分钟执行一次健康检查）
-4. 点击 **Add Trigger**
-
----
-
-### 第七步：绑定自定义域名（可选）
-
-如果你希望 Worker 使用自己的域名（而不是 `*.workers.dev`）：
-
-1. 在 Worker 详情页，点击 **Triggers** → **Custom Domains**
-2. 点击 **Add Custom Domain**
-3. 输入你的域名（该域名需已托管在 Cloudflare），例如 `proxy.example.com`
-4. 点击 **Add Custom Domain** 确认
-
-> **注意**：域名必须已添加到 Cloudflare 并完成 DNS 解析才能使用。
-
----
-
-### 验证部署
-
-部署成功后，访问你的 Worker 地址并调用管理接口验证：
-
-```bash
-# 查看上游健康状态
-curl -sS "https://nginx-cf.your-account.workers.dev/_admin/status" \
-  -H "X-Admin-Token: your-secret-token"
+```toml
+[vars]
+UPSTREAMS = "https://你的服务器地址.com"        # 替换成你的真实上游地址，多个地址用英文逗号分隔
+ADMIN_TOKEN = "请改成一个随机的长密码"            # 用于保护管理 API，不要用默认值
+USE_CF_IPS = "false"                           # 暂时不需要优选 IP 的话保持 false
+PREFERRED_REGION = "apac"                      # 地区：apac（亚太）/ europe / us
 ```
 
-返回类似以下 JSON 则说明部署成功：
+5. 修改完成后，滚动到页面底部，点击 **Commit changes**，再点击 **Commit changes** 确认保存
+
+> ⚠️ **安全提示**：`ADMIN_TOKEN` 一定要改成自己设定的强密码，否则任何人都能调用你的管理接口。
+
+---
+
+### 第三步：创建 Workers KV 命名空间
+
+KV 是 Cloudflare 提供的键值存储，用来保存上游列表和健康检查结果。
+
+1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
+2. 在左侧菜单中，点击 **Workers & Pages**，再点击 **KV**
+3. 点击右上角 **Create a namespace**
+4. 名称填写 `KV`，点击 **Add** 创建
+5. 创建成功后，在列表中可以看到这个命名空间，旁边有一串 **ID**（形如 `a1b2c3d4...`）
+6. **复制这个 ID**，后面第四步要用到
+
+---
+
+### 第四步：在 GitHub 仓库里填入 KV 的 ID
+
+1. 回到你 Fork 的 GitHub 仓库
+2. 再次打开 `wrangler.toml` 文件，点击铅笔图标编辑
+3. 找到以下这段内容：
+
+```toml
+[[kv_namespaces]]
+binding = "KV"
+id = "YOUR_KV_NAMESPACE_ID"
+```
+
+4. 把 `YOUR_KV_NAMESPACE_ID` 替换成第三步复制的 KV 命名空间 ID
+5. 滚动到底部，点击 **Commit changes** 保存
+
+---
+
+### 第五步：将项目连接到 Cloudflare Pages 并部署
+
+Cloudflare Pages 可以直接读取你 GitHub 仓库的代码，自动构建并部署为 Worker。
+
+1. 在 Cloudflare Dashboard 左侧点击 **Workers & Pages**
+2. 点击 **Create application**，选择 **Pages** 标签
+3. 点击 **Connect to Git**
+4. 选择 **GitHub**，授权 Cloudflare 访问你的 GitHub 账号
+5. 在仓库列表中找到并选择 **Nginx-CF**，点击 **Begin setup**
+6. 在构建配置页面，填写以下内容：
+   - **Project name**：随意起名，例如 `nginx-cf`
+   - **Production branch**：选 `main`
+   - **Build command**：填 `npm run build`（如果没有 build 脚本，留空也可以）
+   - **Build output directory**：留空
+7. 点击 **Save and Deploy**，等待部署完成（通常 1~2 分钟）
+
+> 如果部署失败，可以尝试改用下面的「直接创建 Worker」方式（见备选方案）。
+
+---
+
+### 第六步：绑定 KV 命名空间到 Worker
+
+部署完成后，还需要让 Worker 能访问第三步创建的 KV。
+
+1. 在 Cloudflare Dashboard，进入 **Workers & Pages** → 找到你刚部署的项目，点击进入
+2. 点击顶部的 **Settings** 标签
+3. 找到 **Bindings** 区域，点击 **Add** → 选择 **KV namespace**
+4. 填写：
+   - **Variable name**：`KV`（必须完全一致，区分大小写）
+   - **KV namespace**：从下拉列表中选择第三步创建的 `KV`
+5. 点击 **Save** 保存
+
+---
+
+### 第七步：配置 Cron 触发器（自动健康检查）
+
+这一步让 Worker 每 5 分钟自动探测一次上游是否可用。
+
+1. 在 Worker 项目页面，点击 **Settings** → **Triggers**（或 **Cron Triggers**）
+2. 点击 **Add Cron Trigger**
+3. 在输入框中填写：`*/5 * * * *`
+4. 点击 **Add Trigger** 保存
+
+---
+
+### 第八步：绑定自定义域名（可选）
+
+默认情况下，你的 Worker 会分配一个 `*.workers.dev` 的地址，可以直接使用。如果你想用自己的域名（例如 `proxy.example.com`），需要满足以下条件：该域名已经托管在 Cloudflare（即已添加到你的 Cloudflare 账号并将 DNS 解析交给 Cloudflare 管理）。
+
+1. 进入 Worker 项目页面，点击 **Settings** → **Domains & Routes**
+2. 点击 **Add** → 选择 **Custom domain**
+3. 输入你的域名，例如 `proxy.example.com`
+4. 点击 **Add Custom Domain** 确认
+
+Cloudflare 会自动配置好 DNS，通常几分钟内生效。
+
+---
+
+### 验证是否部署成功
+
+打开浏览器，访问你的 Worker 地址（形如 `https://nginx-cf.你的账号.workers.dev`），如果页面能正常打开，说明基本部署成功。
+
+进一步验证管理接口是否工作，可以用以下方式：
+
+**方式 A（推荐新手）**：在浏览器地址栏访问
+```
+https://nginx-cf.你的账号.workers.dev/_admin/status
+```
+会提示需要鉴权（返回 401），这是正常的，说明接口已上线。
+
+**方式 B（命令行）**：
+```bash
+curl -sS "https://nginx-cf.你的账号.workers.dev/_admin/status" \
+  -H "X-Admin-Token: 你设置的ADMIN_TOKEN"
+```
+
+返回类似以下内容则说明一切正常：
 
 ```json
 {
   "upstreams": [
     {
-      "url": "https://a.example.com",
+      "url": "https://你的服务器.com",
       "healthy": true,
       "latency": 98,
       "lastCheck": "2026-05-14T01:00:00.000Z",
@@ -152,6 +201,26 @@ curl -sS "https://nginx-cf.your-account.workers.dev/_admin/status" \
   ]
 }
 ```
+
+---
+
+### 备选方案：直接在控制台粘贴代码
+
+如果不想用 Pages 连接 GitHub，也可以直接手动创建 Worker 并粘贴代码：
+
+1. 在 Cloudflare Dashboard，进入 **Workers & Pages** → **Create application** → **Create Worker**
+2. 给 Worker 起个名字（例如 `nginx-cf`），点击 **Deploy**
+3. 部署后点击 **Edit code** 进入在线编辑器
+4. 在编辑器左侧文件树中，点击 `+` 按钮新建 `src/` 文件夹
+5. 在 `src/` 下依次新建以下文件，并将 GitHub 仓库中对应文件的内容**完整复制粘贴**进去：
+   - `src/index.js`
+   - `src/proxy.js`
+   - `src/upstream.js`
+   - `src/config.js`
+   - `src/cf-ips.js`
+   - `src/admin-ui.js`
+6. 点击编辑器右上角 **Save and deploy**
+7. 然后继续执行上面的第六、七、八步（绑定 KV、配置 Cron、绑定域名）
 
 ---
 
