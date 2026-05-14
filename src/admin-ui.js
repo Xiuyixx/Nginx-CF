@@ -74,7 +74,7 @@ export function getAdminHTML() {
     .empty-state{padding:48px 20px;text-align:center;color:var(--muted)}
     .pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
     .pagination-controls{display:flex;gap:8px}
-    .settings-card{border:1px solid var(--border);border-radius:16px;background:#181818;padding:18px;margin-bottom:18px}
+    .settings-card{border:1px solid var(--border);border-radius:16px;background:#181818;padding:18px;margin-top:18px}
     .settings-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;flex-wrap:wrap}
     .settings-title{font-size:16px;font-weight:700;margin-bottom:4px}
     .settings-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -182,6 +182,20 @@ export function getAdminHTML() {
           <button class="primary" onclick="openAddModal()">＋ 添加上游</button>
         </div>
       </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>URL</th><th>备注</th><th>状态</th><th>延迟</th><th>版本</th><th>检查方式</th><th>最后检查</th><th class="text-right">操作</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+        <div id="emptyState" class="empty-state hidden">暂无上游，点击「添加上游」开始配置。</div>
+      </div>
+      <div class="pagination">
+        <div id="pageInfo" class="muted"></div>
+        <div class="pagination-controls">
+          <button id="prevBtn" onclick="changePage(-1)">← 上一页</button>
+          <button id="nextBtn" onclick="changePage(1)">下一页 →</button>
+        </div>
+      </div>
       <div class="settings-card">
         <div class="settings-head">
           <div>
@@ -203,20 +217,6 @@ export function getAdminHTML() {
             <div class="settings-help-title">转发说明</div>
             Worker 会优先尝试这里填写的地址，但 <code>Host</code> 仍保持 Emby 上游域名。若 Cloudflare 返回 1003，会自动回退原上游。
           </div>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>URL</th><th>备注</th><th>状态</th><th>延迟</th><th>版本</th><th>检查方式</th><th>最后检查</th><th class="text-right">操作</th></tr></thead>
-          <tbody id="tableBody"></tbody>
-        </table>
-        <div id="emptyState" class="empty-state hidden">暂无上游，点击「添加上游」开始配置。</div>
-      </div>
-      <div class="pagination">
-        <div id="pageInfo" class="muted"></div>
-        <div class="pagination-controls">
-          <button id="prevBtn" onclick="changePage(-1)">← 上一页</button>
-          <button id="nextBtn" onclick="changePage(1)">下一页 →</button>
         </div>
       </div>
     </main>
